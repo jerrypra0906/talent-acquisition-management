@@ -1,0 +1,105 @@
+# Environment variables
+.env
+.env.local
+.env.production
+.env.prod
+.env.network
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Docker
+.dockerignore
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads (may contain sensitive data)
+backend/uploads/*
+!backend/uploads/.gitkeep
+candidate-portal/uploads/*
+!candidate-portal/uploads/.gitkeep
+
+# SSL Certificates
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+ssl/
+nginx/ssl/
+
+# Backup files
+*.backup
+*.bak
+backups/
+*.sql.gz
+
+# Test coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Prisma
+prisma/migrations/*.sql
+!prisma/migrations/*.sql
+
+# Secrets and credentials (extra safety)
+secrets/
+credentials/
+*.secret
+*.key
+*_key
+*_secret
+*_token
+
+# Local data
+backend/data/localStorage-export.json
+
