@@ -64,6 +64,8 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN}
       CORS_CREDENTIALS: true
       LOG_LEVEL: info
+    ports:
+      - "4000:4000"
     volumes:
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs

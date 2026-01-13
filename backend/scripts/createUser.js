@@ -26,22 +26,25 @@ async function main() {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Use raw SQL to bypass enum naming drift (userrole vs "UserRole")
-    const now = new Date();
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO users (id, email, password, "firstName", "lastName", "phoneNumber", role, department, division, "isActive", "isEmailVerified", "emailVerifiedAt", "lastLoginAt", "failedLoginCount", "lockedUntil", "createdAt", "updatedAt")
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6::userrole, $7, $8, true, true, $9, NULL, 0, NULL, $10, $10)`,
-      email,
-      hashedPassword,
-      firstName,
-      lastName,
-      null,
-      role,
-      department,
-      division,
-      now,
-      now
-    );
+    // Use Prisma client to avoid enum name mismatch
+    await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        phoneNumber: null,
+        role, // Prisma will map enum correctly (UserRole)
+        department,
+        division,
+        isActive: true,
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
+        lastLoginAt: null,
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    });
 
     console.log('✅ User created');
     console.log('📧 Email:', email);
