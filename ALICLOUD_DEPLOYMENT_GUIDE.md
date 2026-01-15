@@ -1026,9 +1026,32 @@ echo "JWT_SECRET is set: $([ -n "$JWT_SECRET" ] && echo 'YES' || echo 'NO')"
 # export CANDIDATE_PORTAL_URL="http://147.139.176.70:4002"
 # export CORS_ORIGIN="http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002"
 
+# ⚠️ IMPORTANT: Set up DATABASE_URL with URL-encoded password first
+# This handles special characters in POSTGRES_PASSWORD (like /, @, etc.)
+if [ -f "scripts/setup-database-url.sh" ]; then
+  echo "Using helper script to set up DATABASE_URL..."
+  chmod +x scripts/setup-database-url.sh
+  source scripts/setup-database-url.sh .env.production
+  OVERRIDE_FLAG="-f /tmp/docker-compose.override.yml"
+else
+  echo "⚠️  Helper script not found. Using manual URL encoding..."
+  POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)
+  if command -v python3 >/dev/null 2>&1; then
+    POSTGRES_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${POSTGRES_PASSWORD}', safe=''))")
+  elif command -v node >/dev/null 2>&1; then
+    POSTGRES_PASSWORD_ENCODED=$(node -e "console.log(encodeURIComponent('${POSTGRES_PASSWORD}'))")
+  else
+    POSTGRES_PASSWORD_ENCODED=$(echo "${POSTGRES_PASSWORD}" | sed 's|/|%2F|g' | sed 's|@|%40|g' | sed 's|:|%3A|g' | sed 's|#|%23|g' | sed 's|?|%3F|g' | sed 's|&|%26|g' | sed 's|=|%3D|g')
+  fi
+  DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENCODED}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
+  printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > /tmp/docker-compose.override.yml
+  OVERRIDE_FLAG="-f /tmp/docker-compose.override.yml"
+fi
+
 # Start PostgreSQL, Redis, and Backend
 # Using -f flag to specify docker-compose.network.yml and -p for project name
-docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production up -d postgres redis backend
+# Include override file if it was created
+docker compose -f docker-compose.network.yml ${OVERRIDE_FLAG} -p tas-production --env-file .env.production up -d postgres redis backend
 
 # Check status (only shows containers from this project)
 docker compose -p tas-production ps
@@ -1237,42 +1260,65 @@ fi
 
 **🔧 ALTERNATIVE FIX: If DATABASE_URL is empty or missing in the container**
 
-**Complete Fix Steps:**
+**Complete Fix Steps (Using Helper Script - Recommended):**
 
 ```bash
 cd /opt/tas-production
 
-# Step 1: Export environment variables to shell (CRITICAL for variable substitution)
+# Step 1: Use the helper script to set up DATABASE_URL with URL-encoded password
+# This script automatically handles special characters in POSTGRES_PASSWORD
+chmod +x scripts/setup-database-url.sh
+source scripts/setup-database-url.sh .env.production
+
+# Step 2: Stop and recreate backend with proper environment
+docker compose -p tas-production stop backend
+docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production up -d --force-recreate backend
+
+# Step 3: Wait a few seconds, then verify DATABASE_URL is set
+sleep 5
+echo "Checking DATABASE_URL in container..."
+docker compose -p tas-production exec backend printenv DATABASE_URL
+
+# Step 4: Check logs (should see successful connection)
+docker compose -p tas-production logs --tail=50 backend | grep -E "(Database|Redis|connected|error)"
+```
+
+**Alternative Manual Steps (if script not available):**
+
+```bash
+cd /opt/tas-production
+
+# Step 1: Get POSTGRES_PASSWORD and URL-encode it
+POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)
+
+# URL-encode the password (handles special characters like /, @, etc.)
+if command -v python3 >/dev/null 2>&1; then
+  POSTGRES_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${POSTGRES_PASSWORD}', safe=''))")
+elif command -v node >/dev/null 2>&1; then
+  POSTGRES_PASSWORD_ENCODED=$(node -e "console.log(encodeURIComponent('${POSTGRES_PASSWORD}'))")
+else
+  # Fallback: manual encoding
+  POSTGRES_PASSWORD_ENCODED=$(echo "${POSTGRES_PASSWORD}" | sed 's|/|%2F|g' | sed 's|@|%40|g' | sed 's|:|%3A|g' | sed 's|#|%23|g' | sed 's|?|%3F|g' | sed 's|&|%26|g' | sed 's|=|%3D|g')
+fi
+
+# Step 2: Create override file with URL-encoded DATABASE_URL
+DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENCODED}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
+printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > /tmp/docker-compose.override.yml
+
+# Step 3: Export all environment variables
 grep -v '^#' .env.production | grep -v '^$' | grep '=' | sed 's/#.*$//' | sed 's/[[:space:]]*$//' > /tmp/.env.clean
 set -a
 source /tmp/.env.clean
 set +a
 rm /tmp/.env.clean
 
-# Step 2: Verify POSTGRES_PASSWORD is exported (should show first 10 chars)
-echo "POSTGRES_PASSWORD exported: ${POSTGRES_PASSWORD:0:10}..."
-if [ -z "$POSTGRES_PASSWORD" ]; then
-  echo "❌ ERROR: POSTGRES_PASSWORD is not exported!"
-  echo "   Manually export it: export POSTGRES_PASSWORD=\"your_password\""
-  exit 1
-fi
-
-# Step 3: Verify docker-compose can see the variable (check substitution)
-echo "Checking docker-compose variable substitution..."
-docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production config | grep "DATABASE_URL" | head -1
-# Should show: DATABASE_URL: postgresql://tas_user:YOUR_ACTUAL_PASSWORD@postgres:5432/...
-# If it shows ${POSTGRES_PASSWORD}, the substitution didn't work
-
-# Step 4: Stop and recreate backend with proper environment
+# Step 4: Stop and recreate backend
 docker compose -p tas-production stop backend
-docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production up -d --force-recreate backend
+docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production up -d --force-recreate backend
 
-# Step 5: Wait a few seconds, then verify DATABASE_URL is set
+# Step 5: Verify
 sleep 5
-echo "Checking DATABASE_URL in container..."
 docker compose -p tas-production exec backend printenv DATABASE_URL
-
-# Step 6: Check logs (should see successful connection)
 docker compose -p tas-production logs --tail=50 backend | grep -E "(Database|Redis|connected|error)"
 ```
 
