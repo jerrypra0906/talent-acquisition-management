@@ -114,7 +114,7 @@ GitHub no longer supports password authentication. You need to use either:
 
 2. **On the server, clone using the token:**
    ```bash
-   git clone https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas
+   git clone -b main https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas
    ```
    
    Replace `<YOUR_TOKEN>` with your actual token.
@@ -158,7 +158,7 @@ GitHub no longer supports password authentication. You need to use either:
 
 4. **On the servers, clone using SSH:**
    ```bash
-   git clone git@github.com:jerrypra0906/talent-acquisition-management.git tas
+   git clone -b main git@github.com:jerrypra0906/talent-acquisition-management.git tas
    ```
 
 ---
@@ -173,7 +173,7 @@ The local environment is for development on your local machine. All services run
 
 ```bash
 # Clone repository
-git clone git@github.com:jerrypra0906/talent-acquisition-management.git tas
+git clone -b main git@github.com:jerrypra0906/talent-acquisition-management.git tas
 cd tas
 ```
 
@@ -305,10 +305,10 @@ cd /opt
 
 # Clone repository (choose one method):
 # Option A: Using Personal Access Token
-git clone https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-testing
+git clone -b main https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-testing
 
 # Option B: Using SSH (if SSH keys are set up)
-git clone git@github.com:jerrypra0906/talent-acquisition-management.git tas-testing
+git clone -b main git@github.com:jerrypra0906/talent-acquisition-management.git tas-testing
 
 cd tas-testing
 ```
@@ -809,7 +809,7 @@ This way, only NGINX needs ports 80/443, and all other services communicate inte
 
 **Access URLs:**
 - Frontend: `http://147.139.176.70:8080` (instead of port 80)
-- Backend API: `http://147.139.176.70:4000`
+- Backend API: `http://8.215.56.98:4000` (Backend server IP: 8.215.56.98)
 - Candidate Portal: `http://147.139.176.70:4002`
 
 ---
@@ -826,10 +826,10 @@ cd /opt
 
 # Clone repository (choose one method):
 # Option A: Using Personal Access Token
-git clone https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-production
+git clone -b main https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-production
 
 # Option B: Using SSH (if SSH keys are set up)
-git clone git@github.com:jerrypra0906/talent-acquisition-management.git tas-production
+git clone -b main git@github.com:jerrypra0906/talent-acquisition-management.git tas-production
 
 cd tas-production
 ```
@@ -881,7 +881,7 @@ ENCRYPTION_KEY=<Generate 32-char hex string>
 FRONTEND_URL=http://147.139.176.70:8080
 CANDIDATE_PORTAL_URL=http://147.139.176.70:4002
 CORS_ORIGIN=http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
-API_BASE_URL=http://147.139.176.70:4000/api
+API_BASE_URL=http://8.215.56.98:4000/api
 
 # Email Configuration
 SMTP_HOST=smtp.gmail.com
@@ -1499,14 +1499,45 @@ ssh -p 1818 root@147.139.176.70
 # Navigate to deployment directory
 cd /opt
 
-# Clone repository (same as backend server)
-# Option A: Using Personal Access Token
-git clone https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-production
+# Clone repository from main branch
+# Option A: Using Personal Access Token (Recommended - No SSH setup needed)
+git clone -b main https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-production
 
-# Option B: Using SSH
-git clone git@github.com:jerrypra0906/talent-acquisition-management.git tas-production
+# Option B: Using SSH (Requires SSH keys to be set up on this server)
+# If you get "Permission denied (publickey)" error, use Option A instead
+git clone -b main git@github.com:jerrypra0906/talent-acquisition-management.git tas-production
 
 cd tas-production
+```
+
+**⚠️ If you get "Permission denied (publickey)" error with SSH:**
+
+The frontend server doesn't have SSH keys set up for GitHub. You have two options:
+
+**Option 1: Use Personal Access Token (Easiest)**
+```bash
+# Replace <YOUR_TOKEN> with your GitHub Personal Access Token
+git clone -b main https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas-production
+```
+
+**Option 2: Set up SSH keys on frontend server**
+```bash
+# Generate SSH key (if not already exists)
+ssh-keygen -t ed25519 -C "your_email@example.com"
+# Press Enter to accept default location
+# Optionally set a passphrase
+
+# Display public key
+cat ~/.ssh/id_ed25519.pub
+
+# Add this public key to GitHub:
+# 1. Go to: https://github.com/settings/keys
+# 2. Click "New SSH key"
+# 3. Paste the public key
+# 4. Save
+
+# Then try cloning again
+git clone -b main git@github.com:jerrypra0906/talent-acquisition-management.git tas-production
 ```
 
 #### Step 2: Create Production Environment File
@@ -1532,7 +1563,7 @@ HTTP_PORT=8080
 HTTPS_PORT=8443
 
 # API URL (points to production backend server)
-NEXT_PUBLIC_API_URL=http://147.139.176.70:4000/api
+NEXT_PUBLIC_API_URL=http://8.215.56.98:4000/api
 
 # CORS (must match backend configuration - update URLs to use alternative port)
 CORS_ORIGIN=http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
@@ -1553,7 +1584,7 @@ HTTP_PORT=8080
 HTTPS_PORT=8443
 
 # API URL (points to production backend server)
-NEXT_PUBLIC_API_URL=http://147.139.176.70:4000/api
+NEXT_PUBLIC_API_URL=http://8.215.56.98:4000/api
 
 # CORS (use the public URL that users will access)
 CORS_ORIGIN=http://147.139.176.70,http://147.139.176.70:4001,http://147.139.176.70:4002
@@ -1577,7 +1608,7 @@ nano nginx/nginx.conf
 # Backend API upstream (Production)
 upstream backend {
     least_conn;
-    server 147.139.176.70:4000 max_fails=3 fail_timeout=30s;  # Backend server IP
+    server 8.215.56.98:4000 max_fails=3 fail_timeout=30s;  # Backend server IP
 }
 ```
 
@@ -1653,14 +1684,37 @@ server {
 
 #### Step 4: Start Frontend Services
 
+**⚠️ ARCHITECTURE NOTE:**
+- **Frontend Server (ECS-App)**: Should ONLY run: `frontend`, `candidate-portal`, `nginx`
+- **Backend Server (ECS-DB)**: Should ONLY run: `backend`, `postgres`, `redis`
+- Due to `depends_on` relationships in `docker-compose.network.yml`, backend services may start automatically
+- We will explicitly stop backend services on the frontend server after starting frontend services
+- Frontend services connect to backend API via network (configured in NGINX upstream)
+
 ```bash
 cd /opt/tas-production
 
 # Set project name for isolation (prevents conflicts with other apps)
 export COMPOSE_PROJECT_NAME=tas-production
 
-# Export environment variables
-export $(cat .env.production | grep -v '^#' | xargs)
+# Export environment variables (handles inline comments and special characters)
+# Method: Manually export each variable with proper quoting
+export POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export REDIS_PASSWORD="$(grep '^REDIS_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export JWT_SECRET="$(grep '^JWT_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export JWT_REFRESH_SECRET="$(grep '^JWT_REFRESH_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export ENCRYPTION_KEY="$(grep '^ENCRYPTION_KEY=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export FRONTEND_URL="$(grep '^FRONTEND_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export CANDIDATE_PORTAL_URL="$(grep '^CANDIDATE_PORTAL_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export CORS_ORIGIN="$(grep '^CORS_ORIGIN=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export NEXT_PUBLIC_API_URL="$(grep '^NEXT_PUBLIC_API_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export HTTP_PORT="$(grep '^HTTP_PORT=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export HTTPS_PORT="$(grep '^HTTPS_PORT=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+
+# Verify critical variables are exported
+echo "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:+SET}"
+echo "REDIS_PASSWORD: ${REDIS_PASSWORD:+SET}"
+echo "HTTP_PORT: ${HTTP_PORT:-NOT_SET}"
 
 # ⚠️ IMPORTANT: Port 80 is already in use by another application
 # We're using port 8080 instead (configured in .env.production and nginx.conf)
@@ -1672,14 +1726,45 @@ lsof -i :8443 || echo "Port 8443 is available (for HTTPS)"
 # Verify port 80 is in use (expected)
 lsof -i :80 && echo "Port 80 is in use (expected - another application)"
 
-# Start Frontend, Candidate Portal, and NGINX
-# Using -p flag ensures project-specific naming
-docker compose -p tas-production --env-file .env.production up -d frontend candidate-portal nginx
+# Stop any existing containers (if they were started with wrong compose file)
+docker compose -p tas-production stop frontend candidate-portal nginx 2>/dev/null || true
+docker compose -p tas-production rm -f frontend candidate-portal nginx 2>/dev/null || true
 
-# Check status (only shows containers from this project)
+# Start Frontend, Candidate Portal, and NGINX
+# ⚠️ IMPORTANT: Use docker-compose.network.yml (not docker-compose.yml)
+# This ensures NGINX uses port 8080 instead of 80 (configured in .env.production)
+# Using -p flag ensures project-specific naming
+# NOTE: Due to depends_on in docker-compose.network.yml, backend/postgres/redis may start
+#       We will stop them immediately after, as they should only run on the backend server
+docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production up -d frontend candidate-portal nginx
+
+# ⚠️ CRITICAL: Stop backend services on frontend server
+# Backend services (backend, postgres, redis) should ONLY run on the backend server (ECS-DB)
+# They may have started due to depends_on relationships, so we explicitly stop them here
+echo "Stopping backend services on frontend server (they should only run on backend server)..."
+docker compose -p tas-production stop backend postgres redis 2>/dev/null || true
+docker compose -p tas-production rm -f backend postgres redis 2>/dev/null || true
+
+# Verify only frontend services are running
+echo ""
+echo "=== Verifying only frontend services are running ==="
 docker compose -p tas-production ps
 
+# Check status (only shows containers from this project)
+echo ""
+echo "=== Expected running services on FRONTEND server ==="
+echo "✅ tas_frontend (Frontend/Admin Dashboard)"
+echo "✅ tas_candidate_portal (Candidate Portal)"
+echo "✅ tas_nginx (NGINX Reverse Proxy)"
+echo ""
+echo "❌ These should NOT be running on frontend server:"
+echo "   - tas_backend (should run on backend server only)"
+echo "   - tas_postgres (should run on backend server only)"
+echo "   - tas_redis (should run on backend server only)"
+
 # View logs
+echo ""
+echo "=== Viewing logs ==="
 docker compose -p tas-production logs -f nginx
 docker compose -p tas-production logs -f frontend
 
@@ -1713,6 +1798,106 @@ ufw enable
 - Access the application via `http://147.139.176.70:8080`
 - If you have an existing reverse proxy on port 80, you can configure it to route to port 8080 internally
 
+#### Step 6: Troubleshoot Connectivity Issues
+
+If you cannot access `http://147.139.176.70:8080` from your browser, follow these diagnostic steps:
+
+**1. Test from the server itself (should work if NGINX is running):**
+
+```bash
+# Test local connectivity
+curl -I http://localhost:8080
+curl -I http://127.0.0.1:8080
+
+# If this works, the issue is firewall/security group, not NGINX
+```
+
+**2. Check if NGINX is listening on port 8080:**
+
+```bash
+# Check listening ports
+netstat -tulpn | grep 8080
+# OR
+ss -tulpn | grep 8080
+# OR
+lsof -i :8080
+
+# Should show NGINX listening on 0.0.0.0:8080
+```
+
+**3. Check UFW firewall:**
+
+```bash
+# Check if port 8080 is allowed
+ufw status verbose | grep 8080
+
+# If not listed, add it:
+ufw allow 8080/tcp
+ufw reload
+
+# Verify it's now allowed
+ufw status numbered | grep 8080
+```
+
+**4. Check NGINX configuration:**
+
+```bash
+# Check NGINX container logs
+docker compose -p tas-production logs --tail=50 nginx
+
+# Check NGINX configuration inside container
+docker compose -p tas-production exec nginx cat /etc/nginx/nginx.conf | grep -A 5 "listen"
+
+# Should show: listen 8080; (or listen 80; if using HTTP_PORT env var)
+```
+
+**5. ⚠️ CRITICAL: Check AliCloud Security Group**
+
+The most common issue is that AliCloud Security Group is blocking port 8080:
+
+1. **Log in to AliCloud Console**
+2. **Navigate to:** ECS → Instances → Find your frontend server (ECS-App)
+3. **Click:** Security Groups tab
+4. **Click:** Configure Rules
+5. **Add Inbound Rule:**
+   - **Port Range:** 8080/8080
+   - **Protocol:** TCP
+   - **Authorization Object:** 0.0.0.0/0 (or your specific IP)
+   - **Description:** TAS NGINX HTTP
+6. **Save** and wait 1-2 minutes for changes to take effect
+
+**6. Verify NGINX container port mapping:**
+
+```bash
+# Check Docker port mapping
+docker ps --filter "name=tas_nginx" --format "table {{.Names}}\t{{.Ports}}"
+
+# Should show: 0.0.0.0:8080->80/tcp
+# This means: Host port 8080 maps to container port 80
+```
+
+**7. Test from another server (if available):**
+
+```bash
+# From another server that can reach the frontend server
+curl -I http://147.139.176.70:8080
+
+# If this works but browser doesn't, check:
+# - Browser proxy settings
+# - Corporate firewall blocking port 8080
+# - ISP blocking port 8080
+```
+
+**Common Issues and Solutions:**
+
+| Issue | Solution |
+|-------|----------|
+| `Connection refused` from browser | Check AliCloud Security Group (most common) |
+| `Connection refused` from server itself | Check NGINX container is running: `docker compose -p tas-production ps` |
+| `Timeout` from browser | Check UFW firewall: `ufw allow 8080/tcp` |
+| NGINX not listening on 8080 | Check `HTTP_PORT` in `.env.production` and NGINX config |
+| Works locally but not from browser | Check AliCloud Security Group rules |
+
 ---
 
 ## Verification
@@ -1744,7 +1929,7 @@ curl http://<TESTING_FRONTEND_IP>/api/health
 
 ```bash
 # From production backend server or any machine that can reach it
-curl http://147.139.176.70:4000/health
+curl http://8.215.56.98:4000/health
 ```
 
 #### Test Production Frontend Server
@@ -1760,7 +1945,7 @@ curl http://147.139.176.70:4000/health
 curl http://147.139.176.70:8080/api/health
 
 # Or test backend directly (if accessible)
-curl http://147.139.176.70:4000/health
+curl http://8.215.56.98:4000/health
 ```
 
 ---
@@ -1774,7 +1959,7 @@ curl http://147.139.176.70:4000/health
 **Solutions:**
 1. **Use Personal Access Token instead of password:**
    ```bash
-   git clone https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas
+   git clone -b main https://jerrypra0906:<YOUR_TOKEN>@github.com/jerrypra0906/talent-acquisition-management.git tas
    ```
 
 2. **Set up SSH keys** (see Prerequisites section)
@@ -1847,9 +2032,165 @@ echo "REDIS_PASSWORD: ${REDIS_PASSWORD:0:10}..."
 **Check:**
 1. Backend is running: `docker compose ps` on backend server
 2. Port 4000 is open: `ufw status` on backend server
-3. Backend health: `curl http://<BACKEND_IP>:4000/health`
-4. NGINX config: Verify `upstream backend` points to correct IP
+3. Backend health: `curl http://<BACKEND_IP>:4000/health` (Production: `8.215.56.98:4000`)
+4. NGINX config: Verify `upstream backend` points to correct IP (Production: `8.215.56.98:4000`)
 5. Environment file: Ensure using correct `.env.testing` or `.env.production`
+6. **Test direct connectivity from frontend to backend:**
+   ```bash
+   # On frontend server, test if backend is reachable
+   curl -v --connect-timeout 10 http://8.215.56.98:4000/health
+   ```
+   - If this times out or fails, check:
+     - AliCloud Security Group for backend server allows inbound port 4000 from frontend IP (`147.139.176.70`)
+     - Backend server firewall (if enabled) allows port 4000
+     - Backend container is listening on `0.0.0.0:4000` (not just `127.0.0.1:4000`)
+
+#### 504 Gateway Timeout from Frontend to Backend
+
+**Problem:** Frontend NGINX returns `504 Gateway Time-out` when trying to reach backend API.
+
+**Symptoms:**
+- `curl http://localhost:8080/api/health` on frontend server returns `504 Gateway Time-out`
+- Browser shows "Login failed" or API requests timeout
+- Backend is healthy when tested directly on backend server
+
+**Root Causes:**
+1. **NGINX upstream points to wrong IP:** NGINX config still uses frontend server IP instead of backend server IP
+2. **Network connectivity blocked:** Frontend server cannot reach backend server on port 4000
+3. **AliCloud Security Group:** Backend server's security group doesn't allow inbound traffic on port 4000
+
+**Solution Steps:**
+
+**Step 1: Test Direct Connectivity from Frontend to Backend**
+
+On **frontend server (ECS-App)**:
+```bash
+# Test if backend is reachable directly
+curl -v --connect-timeout 10 http://8.215.56.98:4000/health
+```
+
+- ✅ **If this succeeds:** Network connectivity is OK, proceed to Step 2
+- ❌ **If this times out or fails:** Network/firewall issue, proceed to Step 3
+
+**Step 2: Update NGINX Configuration**
+
+On **frontend server (ECS-App)**:
+```bash
+cd /opt/tas-production
+
+# Edit NGINX config
+nano nginx/nginx.network.conf
+```
+
+Find the `upstream backend` section and ensure it uses the **backend server IP**:
+```nginx
+upstream backend {
+    least_conn;
+    server 8.215.56.98:4000 max_fails=3 fail_timeout=30s;  # Backend server IP
+}
+```
+
+Save and exit (`Ctrl+X`, `Y`, `Enter`).
+
+**Restart NGINX:**
+```bash
+docker compose -p tas-production restart nginx
+
+# Verify NGINX config inside container
+docker compose -p tas-production exec nginx cat /etc/nginx/nginx.conf | grep -A 3 "upstream backend"
+
+# Should show: server 8.215.56.98:4000
+```
+
+**Test again:**
+```bash
+curl -v http://localhost:8080/api/health
+```
+
+**Step 3: Fix Network/Firewall Issues**
+
+If Step 1 failed, check the following:
+
+**A. AliCloud Security Group (Backend Server)**
+
+**Detailed Steps to Add Inbound Rule:**
+
+1. **Navigate to Backend Server:**
+   - Go to [AliCloud Console](https://ecs.console.alibabacloud.com/)
+   - Navigate to **Elastic Compute Service (ECS)** → **Instances**
+   - Find and click on your backend server: **ECS-DB** (IP: `8.215.56.98`)
+
+2. **Open Security Groups:**
+   - In the instance details page, click on the **Security Groups** tab (you should already be here based on your screenshot)
+   - You should see a table showing "Internal Inbound Rules" (or "Inbound Rules")
+
+3. **Add New Inbound Rule:**
+   - Look for an **"Add Rule"** or **"Create Rule"** button (usually at the top-right of the rules table, or as a "+" icon)
+   - Click it to open the rule creation dialog/form
+
+4. **Configure the Rule:**
+   Fill in the following fields:
+   - **Action:** Select **"Allow"** (default)
+   - **Protocol Type:** Select **"TCP"**
+   - **Destination Port Range:** Enter `4000/4000` (or just `4000` if the interface accepts single port)
+   - **Authorization Object:** 
+     - **Option 1 (Recommended - More Secure):** Enter `147.139.176.70/32` (only allows frontend server)
+     - **Option 2 (For Testing):** Select **"All IP Addresses"** or enter `0.0.0.0/0` (allows from anywhere)
+   - **Description (Optional):** Enter `TAS Backend API from Frontend Server` or `TAS Backend Port 4000`
+   - **Priority:** Leave as default (usually `1`)
+
+5. **Save the Rule:**
+   - Click **"OK"** or **"Confirm"** or **"Save"** button
+   - The new rule should appear in the rules table
+
+6. **Verify the Rule:**
+   - Check that the new rule appears in the list with:
+     - Protocol: `TCP`
+     - Port: `4000/4000` (or `4000`)
+     - Authorization Object: `147.139.176.70/32` (or `0.0.0.0/0`)
+
+**Note:** If you don't see an "Add Rule" button, you might need to:
+- Click on the security group name/link to open the security group details page
+- Then add the rule from there
+- Or click **"Configure Rules"** button if available
+
+**B. Backend Server Firewall (if enabled)**
+
+On **backend server (ECS-DB)**:
+```bash
+# Check if UFW is enabled
+ufw status
+
+# If enabled, allow port 4000 from frontend server
+ufw allow from 147.139.176.70 to any port 4000 proto tcp
+ufw reload
+```
+
+**C. Verify Backend Container Port Binding**
+
+On **backend server (ECS-DB)**:
+```bash
+# Check if backend is listening on 0.0.0.0:4000 (accessible externally)
+netstat -tulpn | grep 4000
+# Should show: 0.0.0.0:4000 (not 127.0.0.1:4000)
+
+# If it shows 127.0.0.1:4000, check docker-compose.network.yml has:
+# ports:
+#   - "4000:4000"
+```
+
+**Step 4: Verify Fix**
+
+After completing Steps 2 and 3:
+```bash
+# On frontend server
+curl -v http://localhost:8080/api/health
+# Should return: HTTP/1.1 200 OK
+
+# Test from browser
+# Open: http://147.139.176.70:8080
+# Try to login - should work now
+```
 
 ### Database Connection Issues
 
@@ -2785,32 +3126,188 @@ docker compose -p tas-production logs --tail=50 backend
 
 ### Update Application
 
+**⚠️ IMPORTANT:** When pulling new code from GitHub, you may need to rebuild Docker containers if:
+- Backend code changed (Dockerfile, package.json, source code)
+- Frontend code changed (Dockerfile, package.json, source code)
+- Docker Compose files changed
+- Database migrations were added
+
+**If only environment files or documentation changed**, a simple restart is sufficient.
+
 #### Testing Environment
 
+**Backend Server:**
+
 ```bash
-# On both testing servers
+# Navigate to deployment directory
 cd /opt/tas-testing
+
+# Pull latest code from GitHub
 git pull
 
-# Testing Backend server
-docker compose --env-file .env.testing restart backend
+# Check what changed (optional - to see if rebuild is needed)
+git log --oneline -5
 
-# Testing Frontend server
-docker compose --env-file .env.testing restart frontend candidate-portal nginx
+# If backend code changed, rebuild and restart
+docker compose -f docker-compose.network.yml -p tas-testing --env-file .env.testing up -d --build backend
+
+# If only environment/config changed, just restart
+# docker compose -p tas-testing --env-file .env.testing restart backend
+
+# Verify backend is running
+docker compose -p tas-testing ps backend
+docker compose -p tas-testing logs --tail=20 backend
+
+# Test health endpoint
+curl http://localhost:4000/health
+```
+
+**Frontend Server:**
+
+```bash
+# Navigate to deployment directory
+cd /opt/tas-testing
+
+# Pull latest code from GitHub
+git pull
+
+# If frontend code changed, rebuild and restart
+docker compose -f docker-compose.network.yml -p tas-testing --env-file .env.testing up -d --build frontend candidate-portal nginx
+
+# If only environment/config changed, just restart
+# docker compose -p tas-testing --env-file .env.testing restart frontend candidate-portal nginx
+
+# Verify services are running
+docker compose -p tas-testing ps
 ```
 
 #### Production Environment
 
+**Backend Server:**
+
 ```bash
-# On both production servers
+# Navigate to deployment directory
 cd /opt/tas-production
+
+# Pull latest code from GitHub
 git pull
 
-# Production Backend server (using project name for isolation)
-docker compose -p tas-production --env-file .env.production restart backend
+# Check what changed (optional - to see if rebuild is needed)
+git log --oneline -5
 
-# Production Frontend server (using project name for isolation)
-docker compose -p tas-production --env-file .env.production restart frontend candidate-portal nginx
+# Export environment variables (needed for variable substitution)
+export POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export REDIS_PASSWORD="$(grep '^REDIS_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export JWT_SECRET="$(grep '^JWT_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export JWT_REFRESH_SECRET="$(grep '^JWT_REFRESH_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export ENCRYPTION_KEY="$(grep '^ENCRYPTION_KEY=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export FRONTEND_URL="$(grep '^FRONTEND_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export CANDIDATE_PORTAL_URL="$(grep '^CANDIDATE_PORTAL_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export CORS_ORIGIN="$(grep '^CORS_ORIGIN=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+
+# If backend code changed, rebuild with override file (for DATABASE_URL)
+POSTGRES_PASSWORD_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${POSTGRES_PASSWORD}', safe=''))" 2>/dev/null || echo "${POSTGRES_PASSWORD}")
+DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENC}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
+printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > /tmp/docker-compose.override.yml
+
+docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production up -d --build backend
+
+# If only environment/config changed, just restart
+# docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production restart backend
+
+# Wait for backend to be ready
+sleep 5
+
+# Verify backend is running
+docker compose -p tas-production ps backend
+docker compose -p tas-production logs --tail=20 backend | grep -E "(Server|running|error|Error|listening)"
+
+# Test health endpoint
+curl http://localhost:4000/health
+
+# If database migrations were added, run them
+docker compose -p tas-production exec backend npx prisma migrate deploy
+```
+
+**Frontend Server:**
+
+```bash
+# Navigate to deployment directory
+cd /opt/tas-production
+
+# Pull latest code from GitHub
+git pull
+
+# If frontend code changed, rebuild and restart
+docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production up -d --build frontend candidate-portal nginx
+
+# If only environment/config changed, just restart
+# docker compose -p tas-production --env-file .env.production restart frontend candidate-portal nginx
+
+# Verify services are running
+docker compose -p tas-production ps
+
+# Test frontend (if accessible)
+curl http://localhost:8080 2>&1 | head -20
+```
+
+**Quick Update Script (Production Backend):**
+
+For convenience, you can create a script to automate the update process:
+
+```bash
+# Create update script
+cat > /opt/tas-production/update-backend.sh << 'EOF'
+#!/bin/bash
+set -e
+
+cd /opt/tas-production
+
+echo "=== Pulling latest code from GitHub ==="
+git pull
+
+echo ""
+echo "=== Exporting environment variables ==="
+export POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export REDIS_PASSWORD="$(grep '^REDIS_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export JWT_SECRET="$(grep '^JWT_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export JWT_REFRESH_SECRET="$(grep '^JWT_REFRESH_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export ENCRYPTION_KEY="$(grep '^ENCRYPTION_KEY=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export FRONTEND_URL="$(grep '^FRONTEND_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export CANDIDATE_PORTAL_URL="$(grep '^CANDIDATE_PORTAL_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+export CORS_ORIGIN="$(grep '^CORS_ORIGIN=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+
+echo ""
+echo "=== Creating DATABASE_URL override ==="
+POSTGRES_PASSWORD_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${POSTGRES_PASSWORD}', safe=''))" 2>/dev/null || echo "${POSTGRES_PASSWORD}")
+DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENC}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
+printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > /tmp/docker-compose.override.yml
+
+echo ""
+echo "=== Rebuilding and restarting backend ==="
+docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production up -d --build backend
+
+echo ""
+echo "=== Waiting for backend to be ready ==="
+sleep 5
+
+echo ""
+echo "=== Running database migrations (if any) ==="
+docker compose -p tas-production exec backend npx prisma migrate deploy || echo "No new migrations"
+
+echo ""
+echo "=== Verifying backend health ==="
+docker compose -p tas-production ps backend
+curl -s http://localhost:4000/health | head -5
+
+echo ""
+echo "✅ Backend update complete!"
+EOF
+
+chmod +x /opt/tas-production/update-backend.sh
+
+# Run the update script
+/opt/tas-production/update-backend.sh
 ```
 
 ### View Logs
@@ -3110,7 +3607,7 @@ Keep a record of which ports are used by which applications:
 | **Environment File** | `.env.local` | `.env.testing` | `.env.production` |
 | **Database** | Local Docker | AliCloud Server | AliCloud Server |
 | **Frontend** | `localhost:3000` | `<TESTING_FRONTEND_IP>` | `147.139.176.70` |
-| **Backend** | `localhost:4000` | `<TESTING_BACKEND_IP>:4000` | `147.139.176.70:4000` |
+| **Backend** | `localhost:4000` | `<TESTING_BACKEND_IP>:4000` | `8.215.56.98:4000` |
 | **SSL/HTTPS** | Not required | Optional | Required |
 | **Secrets** | Development values | Testing secrets | Production secrets |
 | **Purpose** | Development | Pre-production testing | Live production |
