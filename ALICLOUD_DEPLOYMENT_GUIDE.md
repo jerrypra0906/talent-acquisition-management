@@ -1491,6 +1491,16 @@ ufw enable
 
 ### Production Frontend Server Setup
 
+**⚠️ IMPORTANT: Docker Compose Files**
+
+- **`docker-compose.frontend.yml`**: Use this on the **FRONTEND SERVER** (ECS-App)
+  - Only includes: `frontend`, `candidate-portal`, `nginx`
+  - Does NOT include: `backend`, `postgres`, `redis` (these run on backend server)
+  
+- **`docker-compose.network.yml`**: Use this on the **BACKEND SERVER** (ECS-DB)
+  - Includes all services: `backend`, `postgres`, `redis`, `frontend`, `candidate-portal`, `nginx`
+  - On backend server, only `backend`, `postgres`, `redis` should run
+
 #### Step 1: Clone Repository
 
 ```bash
@@ -1731,23 +1741,15 @@ lsof -i :8443 || echo "Port 8443 is available (for HTTPS)"
 lsof -i :80 && echo "Port 80 is in use (expected - another application)"
 
 # Stop any existing containers (if they were started with wrong compose file)
-docker compose -p tas-production stop frontend candidate-portal nginx 2>/dev/null || true
-docker compose -p tas-production rm -f frontend candidate-portal nginx 2>/dev/null || true
+docker compose -p tas-production stop frontend candidate-portal nginx backend postgres redis 2>/dev/null || true
+docker compose -p tas-production rm -f frontend candidate-portal nginx backend postgres redis 2>/dev/null || true
 
 # Start Frontend, Candidate Portal, and NGINX
-# ⚠️ IMPORTANT: Use docker-compose.network.yml (not docker-compose.yml)
-# This ensures NGINX uses port 8080 instead of 80 (configured in .env.production)
+# ⚠️ IMPORTANT: Use docker-compose.frontend.yml (frontend-specific, no backend services)
+# This file only includes: frontend, candidate-portal, and nginx
+# Backend services (backend, postgres, redis) will NOT start with this file
 # Using -p flag ensures project-specific naming
-# NOTE: Due to depends_on in docker-compose.network.yml, backend/postgres/redis may start
-#       We will stop them immediately after, as they should only run on the backend server
-docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production up -d frontend candidate-portal nginx
-
-# ⚠️ CRITICAL: Stop backend services on frontend server
-# Backend services (backend, postgres, redis) should ONLY run on the backend server (ECS-DB)
-# They may have started due to depends_on relationships, so we explicitly stop them here
-echo "Stopping backend services on frontend server (they should only run on backend server)..."
-docker compose -p tas-production stop backend postgres redis 2>/dev/null || true
-docker compose -p tas-production rm -f backend postgres redis 2>/dev/null || true
+docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production up -d
 
 # Verify only frontend services are running
 echo ""
@@ -3243,10 +3245,11 @@ cd /opt/tas-production
 git pull
 
 # If frontend code changed, rebuild and restart
-docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production up -d --build frontend candidate-portal nginx
+# ⚠️ Use docker-compose.frontend.yml for frontend server (no backend services)
+docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production up -d --build
 
 # If only environment/config changed, just restart
-# docker compose -p tas-production --env-file .env.production restart frontend candidate-portal nginx
+# docker compose -p tas-production restart frontend candidate-portal nginx
 
 # Verify services are running
 docker compose -p tas-production ps
