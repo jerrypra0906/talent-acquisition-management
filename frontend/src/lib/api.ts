@@ -33,11 +33,18 @@ export const api = axios.create({
 api.defaults.baseURL = getApiBaseUrl()
 
 // Interceptor to ensure baseURL is always current (in case of navigation)
+// Only override if NEXT_PUBLIC_API_URL is not explicitly set
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname
-    const protocol = window.location.protocol
-    config.baseURL = `${protocol}//${hostname}:4000/api`
+    // If NEXT_PUBLIC_API_URL is set, use it (don't override)
+    if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) {
+      config.baseURL = process.env.NEXT_PUBLIC_API_URL
+    } else {
+      // Fallback: use same hostname with port 4000
+      const hostname = window.location.hostname
+      const protocol = window.location.protocol
+      config.baseURL = `${protocol}//${hostname}:4000/api`
+    }
   }
   return config
 })

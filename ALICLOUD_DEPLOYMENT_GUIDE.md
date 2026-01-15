@@ -1562,8 +1562,10 @@ SERVER_HOST=147.139.176.70
 HTTP_PORT=8080
 HTTPS_PORT=8443
 
-# API URL (points to production backend server)
-NEXT_PUBLIC_API_URL=http://8.215.56.98:4000/api
+# API URL (points to NGINX on frontend server, which proxies to backend)
+# ⚠️ IMPORTANT: Use NGINX URL (port 8080) not direct backend URL (port 4000)
+# This ensures requests go through NGINX for proper routing and CORS handling
+NEXT_PUBLIC_API_URL=http://147.139.176.70:8080/api
 
 # CORS (must match backend configuration - update URLs to use alternative port)
 CORS_ORIGIN=http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
@@ -1583,8 +1585,10 @@ SERVER_HOST=147.139.176.70
 HTTP_PORT=8080
 HTTPS_PORT=8443
 
-# API URL (points to production backend server)
-NEXT_PUBLIC_API_URL=http://8.215.56.98:4000/api
+# API URL (points to NGINX on frontend server, which proxies to backend)
+# ⚠️ IMPORTANT: Use NGINX URL (port 8080) not direct backend URL (port 4000)
+# This ensures requests go through NGINX for proper routing and CORS handling
+NEXT_PUBLIC_API_URL=http://147.139.176.70:8080/api
 
 # CORS (use the public URL that users will access)
 CORS_ORIGIN=http://147.139.176.70,http://147.139.176.70:4001,http://147.139.176.70:4002
