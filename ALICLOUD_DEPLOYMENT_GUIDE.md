@@ -808,9 +808,14 @@ This way, only NGINX needs ports 80/443, and all other services communicate inte
 - ⚠️ Port 5434: In use by another PostgreSQL (TAS uses 5432, no conflict)
 
 **Access URLs:**
-- Frontend: `http://147.139.176.70:8080` (instead of port 80)
+- Frontend: `http://tas.energi-up.com:8080` (Domain) or `http://147.139.176.70:8080` (IP)
 - Backend API: `http://8.215.56.98:4000` (Backend server IP: 8.215.56.98)
 - Candidate Portal: `http://147.139.176.70:4002`
+
+**⚠️ Domain Configuration:**
+- Domain name: `tas.energi-up.com`
+- Ensure DNS A record points `tas.energi-up.com` to `147.139.176.70`
+- NGINX is configured to accept both domain and IP access
 
 ---
 
@@ -878,9 +883,11 @@ ENCRYPTION_KEY=<Generate 32-char hex string>
 
 # Application URLs (Production)
 # Note: Frontend uses port 8080 due to port 80 conflict
-FRONTEND_URL=http://147.139.176.70:8080
+# Using domain name: tas.energi-up.com
+FRONTEND_URL=http://tas.energi-up.com:8080
 CANDIDATE_PORTAL_URL=http://147.139.176.70:4002
-CORS_ORIGIN=http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
+# CORS: Include both domain and IP for flexibility
+CORS_ORIGIN=http://tas.energi-up.com:8080,http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
 API_BASE_URL=http://8.215.56.98:4000/api
 
 # Email Configuration
@@ -1621,11 +1628,12 @@ HTTPS_PORT=8443
 # API URL (points to NGINX on frontend server, which proxies to backend)
 # ⚠️ IMPORTANT: Use NGINX URL (port 8080) not direct backend URL (port 4000)
 # This ensures requests go through NGINX for proper routing and CORS handling
-NEXT_PUBLIC_API_URL=http://147.139.176.70:8080/api
+# Using domain name: tas.energi-up.com
+NEXT_PUBLIC_API_URL=http://tas.energi-up.com:8080/api
 
-# CORS (must match backend configuration - update URLs to use alternative port)
-CORS_ORIGIN=http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
-FRONTEND_URL=http://147.139.176.70:8080
+# CORS (must match backend configuration - include both domain and IP for flexibility)
+CORS_ORIGIN=http://tas.energi-up.com:8080,http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
+FRONTEND_URL=http://tas.energi-up.com:8080
 CANDIDATE_PORTAL_URL=http://147.139.176.70:4002
 ```
 
@@ -1974,6 +1982,94 @@ curl http://<TESTING_BACKEND_IP>:4000/health
 ```bash
 curl http://<TESTING_FRONTEND_IP>/api/health
 ```
+
+### Domain Configuration (Optional)
+
+If you want to use a domain name instead of IP address:
+
+**Step 1: Configure DNS**
+
+1. Go to your DNS provider (where `energi-up.com` is managed)
+2. Add an **A Record**:
+   - **Name/Host:** `tas` (or `@` for root domain)
+   - **Type:** `A`
+   - **Value/IP:** `147.139.176.70`
+   - **TTL:** `3600` (or default)
+
+3. Wait for DNS propagation (can take a few minutes to 48 hours)
+
+**Step 2: Update Environment Variables**
+
+**On Frontend Server (ECS-App):**
+
+```bash
+cd /opt/tas-production
+nano .env.production
+```
+
+Update these lines:
+```env
+# Use domain name instead of IP
+NEXT_PUBLIC_API_URL=http://tas.energi-up.com:8080/api
+FRONTEND_URL=http://tas.energi-up.com:8080
+```
+
+**On Backend Server (ECS-DB):**
+
+```bash
+cd /opt/tas-production
+nano .env.production
+```
+
+Update these lines:
+```env
+# Include both domain and IP in CORS for flexibility
+FRONTEND_URL=http://tas.energi-up.com:8080
+CORS_ORIGIN=http://tas.energi-up.com:8080,http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002
+```
+
+**Step 3: Update NGINX Configuration**
+
+The NGINX config already includes the domain name. If you need to update it:
+
+```bash
+cd /opt/tas-production
+nano nginx/nginx.network.conf
+```
+
+Ensure `server_name` includes the domain:
+```nginx
+server_name tas.energi-up.com 147.139.176.70;
+```
+
+**Step 4: Rebuild and Restart Services**
+
+**Frontend Server:**
+```bash
+cd /opt/tas-production
+git pull origin main
+docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production build --no-cache frontend
+docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production up -d
+docker compose -p tas-production restart nginx
+```
+
+**Backend Server:**
+```bash
+cd /opt/tas-production
+git pull origin main
+docker compose -p tas-production restart backend
+```
+
+**Step 5: Verify Domain Access**
+
+1. Test domain: `http://tas.energi-up.com:8080`
+2. Should show the login page
+3. Try logging in
+
+**Note:** If you want to use port 80 (standard HTTP) instead of 8080, you'll need to:
+- Configure an external reverse proxy/load balancer
+- Or use AliCloud's Application Load Balancer (ALB)
+- Or free up port 80 on the frontend server
 
 ### Production Environment Verification
 
