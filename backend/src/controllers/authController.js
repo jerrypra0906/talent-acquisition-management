@@ -145,3 +145,24 @@ exports.getCurrentUser = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Update current user profile
+ * PUT /api/auth/me
+ */
+exports.updateCurrentUser = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { firstName, lastName, phoneNumber } = req.body;
+
+  const updated = await authService.updateCurrentUser(userId, {
+    firstName,
+    lastName,
+    phoneNumber,
+  });
+
+  res.json({
+    success: true,
+    message: 'Profile updated successfully',
+    data: { user: updated },
+  });
+});
+

@@ -64,5 +64,12 @@ router.post(
  */
 router.get('/me', authenticate, authController.getCurrentUser);
 
+/**
+ * @route   PUT /api/auth/me
+ * @desc    Update current user profile
+ * @access  Private
+ */
+router.put('/me', authenticate, authController.updateCurrentUser);
+
 module.exports = router;
 

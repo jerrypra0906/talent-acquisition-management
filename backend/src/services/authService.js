@@ -274,11 +274,67 @@ async function changePassword(userId, currentPassword, newPassword) {
   logger.info(`Password changed for user: ${userId}`);
 }
 
+/**
+ * Update current user's profile (self-service)
+ * - Intentionally limited to safe fields only
+ */
+async function updateCurrentUser(userId, data) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const toNullIfEmpty = (value) => {
+    if (value === undefined || value === null) return undefined;
+    const trimmed = String(value).trim();
+    return trimmed === '' ? null : trimmed;
+  };
+
+  const updateData = {};
+
+  if (data.firstName !== undefined) updateData.firstName = String(data.firstName).trim();
+  if (data.lastName !== undefined) updateData.lastName = String(data.lastName).trim();
+  if (data.phoneNumber !== undefined) updateData.phoneNumber = toNullIfEmpty(data.phoneNumber);
+
+  // Prevent empty required fields
+  if (updateData.firstName !== undefined && !updateData.firstName) {
+    throw new Error('First name is required');
+  }
+  if (updateData.lastName !== undefined && !updateData.lastName) {
+    throw new Error('Last name is required');
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      department: true,
+      division: true,
+      pt: true,
+      area: true,
+      areaDetail: true,
+      isActive: true,
+    },
+  });
+
+  logger.info(`Profile updated for user: ${userId}`);
+  return updated;
+}
+
 module.exports = {
   registerCandidate,
   login,
   refreshAccessToken,
   logout,
   changePassword,
+  updateCurrentUser,
 };
 

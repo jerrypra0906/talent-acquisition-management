@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  backend:
+    image: jerrypratama/tas-backend:latest
+    container_name: tas_backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      # General
+      NODE_ENV: production
+      PORT: 4000
+      LOG_LEVEL: info
+      
+      # URLs - UPDATE WITH YOUR DOMAINS
+      FRONTEND_URL: https://admin.kpn-tas.gamasap.com
+      CANDIDATE_PORTAL_URL: https://careers.kpn-tas.gamasap.com
+      API_BASE_URL: https://api.kpn-tas.gamasap.com
+      
+      # Database - UPDATE WITH YOUR RDS ENDPOINT
+      # Format: postgresql://username:password@endpoint:port/database?params
+      # Example: postgresql://tasadmin:tasadminkpn@2025@tas-db-prod.abc123.us-east-1.rds.amazonaws.com:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20
+      # Replace the endpoint (172.30.60.122 or use your RDS endpoint from AWS Console → RDS → Databases → Your DB → Endpoint)
+      DATABASE_URL: postgresql://tasadmin:tasadminkpn@2025@172.30.60.122:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20
+      
+      # Redis - UPDATE IF USING ELASTICACHE (else leave as is for Docker Redis)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-your-redis-password-here}
+      
+      # JWT & Encryption - GENERATED SECRETS (DO NOT CHANGE)
+      JWT_SECRET: 29385124500de9cdb28814fe98432399bc9aead16ab4301d1f52c372974705fe
+      JWT_REFRESH_SECRET: 9b038281cc9a904f8340f249d1155a7aedb22fea074308c988c5fad7110c1c17
+      ENCRYPTION_KEY: 537b7ba9c2f2442cffa6e86356433b52
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      
+      # CORS
+      CORS_ORIGIN: https://admin.kpn-tas.gamasap.com,https://careers.kpn-tas.gamasap.com
+      CORS_CREDENTIALS: "true"
+      
+      # Security / Rate Limits
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+      RATE_LIMIT_LOGIN_MAX: 200
+      ACCOUNT_LOCKOUT_THRESHOLD: 5
+      
+      # File Uploads
+      MAX_FILE_SIZE: 10485760
+      ALLOWED_FILE_TYPES: pdf,doc,docx,jpg,jpeg,png,xls,xlsx
+      UPLOAD_DIR: ./uploads
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - tas_network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    image: jerrypratama/tas-frontend:latest
+    container_name: tas_frontend
+    restart: unless-stopped
+    ports:
+      - "4001:3000"
+    environment:
+      NODE_ENV: production
+    networks:
+      - tas_network
+
+  candidate-portal:
+    image: jerrypratama/tas-candidate-portal:latest
+    container_name: tas_candidate_portal
+    restart: unless-stopped
+    ports:
+      - "4002:3000"
+    environment:
+      NODE_ENV: production
+    networks:
+      - tas_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: tas_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-your-redis-password-here}
+    volumes:
+      - redis_data:/data
+    networks:
+      - tas_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  tas_network:
+    driver: bridge
+

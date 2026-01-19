@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
+import api from '@/lib/api'
 import { 
   UserIcon, 
   ShieldCheckIcon, 
@@ -14,15 +15,98 @@ import {
 } from '@heroicons/react/24/outline'
 
 export default function SettingsPage() {
-  const { isAuthenticated, isLoading, user } = useAuth()
+  const { isAuthenticated, isLoading, user, refreshUser } = useAuth()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState('profile')
+
+  const [profileFirstName, setProfileFirstName] = useState('')
+  const [profileLastName, setProfileLastName] = useState('')
+  const [profilePhoneNumber, setProfilePhoneNumber] = useState('')
+  const [profileIsSubmitting, setProfileIsSubmitting] = useState(false)
+  const [profileError, setProfileError] = useState<string>('')
+  const [profileSuccess, setProfileSuccess] = useState<string>('')
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [passwordIsSubmitting, setPasswordIsSubmitting] = useState(false)
+  const [passwordError, setPasswordError] = useState<string>('')
+  const [passwordSuccess, setPasswordSuccess] = useState<string>('')
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push('/login')
     }
   }, [isAuthenticated, isLoading, router])
+
+  useEffect(() => {
+    setProfileFirstName(user?.firstName || '')
+    setProfileLastName(user?.lastName || '')
+    setProfilePhoneNumber((user as any)?.phoneNumber || '')
+  }, [user])
+
+  const handleSaveProfile = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    setProfileError('')
+    setProfileSuccess('')
+
+    if (!profileFirstName.trim() || !profileLastName.trim()) {
+      setProfileError('First Name and Last Name are required.')
+      return
+    }
+
+    setProfileIsSubmitting(true)
+    try {
+      await api.put('/auth/me', {
+        firstName: profileFirstName.trim(),
+        lastName: profileLastName.trim(),
+        phoneNumber: profilePhoneNumber,
+      })
+      await refreshUser()
+      setProfileSuccess('Profile updated successfully.')
+    } catch (err: any) {
+      setProfileError(err?.response?.data?.message || err?.message || 'Failed to update profile.')
+    } finally {
+      setProfileIsSubmitting(false)
+    }
+  }
+
+  const handleChangePassword = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    setPasswordError('')
+    setPasswordSuccess('')
+
+    if (!currentPassword.trim() || !newPassword.trim() || !confirmNewPassword.trim()) {
+      setPasswordError('Please fill Current Password, New Password, and Confirm New Password.')
+      return
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('New Password and Confirm New Password do not match.')
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError('New Password must be at least 6 characters.')
+      return
+    }
+
+    setPasswordIsSubmitting(true)
+    try {
+      await api.post('/auth/change-password', {
+        currentPassword,
+        newPassword,
+      })
+      setPasswordSuccess('Password updated successfully.')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+    } catch (err: any) {
+      setPasswordError(err?.response?.data?.message || err?.message || 'Failed to update password.')
+    } finally {
+      setPasswordIsSubmitting(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -52,12 +136,30 @@ export default function SettingsPage() {
                 Update your personal information and contact details.
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+
+            {(profileError || profileSuccess) && (
+              <div>
+                {profileError && (
+                  <div className="rounded-md bg-red-50 p-4">
+                    <div className="text-sm text-red-700">{profileError}</div>
+                  </div>
+                )}
+                {profileSuccess && (
+                  <div className="rounded-md bg-green-50 p-4">
+                    <div className="text-sm text-green-700">{profileSuccess}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProfile}>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700">First Name</label>
                 <input
                   type="text"
-                  defaultValue={user?.firstName || ''}
+                  value={profileFirstName}
+                  onChange={(e) => setProfileFirstName(e.target.value)}
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
               </div>
@@ -65,7 +167,8 @@ export default function SettingsPage() {
                 <label className="block text-sm font-medium text-gray-700">Last Name</label>
                 <input
                   type="text"
-                  defaultValue={user?.lastName || ''}
+                  value={profileLastName}
+                  onChange={(e) => setProfileLastName(e.target.value)}
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
               </div>
@@ -73,23 +176,32 @@ export default function SettingsPage() {
                 <label className="block text-sm font-medium text-gray-700">Email</label>
                 <input
                   type="email"
-                  defaultValue={user?.email || ''}
+                  value={user?.email || ''}
+                  disabled
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
+                <p className="mt-1 text-xs text-gray-500">Email cannot be changed.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Phone</label>
                 <input
                   type="tel"
+                  value={profilePhoneNumber}
+                  onChange={(e) => setProfilePhoneNumber(e.target.value)}
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 />
               </div>
             </div>
             <div className="flex justify-end">
-              <button className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                Save Changes
+              <button
+                type="submit"
+                disabled={profileIsSubmitting}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {profileIsSubmitting ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
+            </form>
           </div>
         )
 
@@ -105,11 +217,29 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <div>
                 <h4 className="text-sm font-medium text-gray-900">Change Password</h4>
-                <div className="mt-4 space-y-4">
+
+                {(passwordError || passwordSuccess) && (
+                  <div className="mt-4">
+                    {passwordError && (
+                      <div className="rounded-md bg-red-50 p-4">
+                        <div className="text-sm text-red-700">{passwordError}</div>
+                      </div>
+                    )}
+                    {passwordSuccess && (
+                      <div className="rounded-md bg-green-50 p-4">
+                        <div className="text-sm text-green-700">{passwordSuccess}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <form className="mt-4 space-y-4" onSubmit={handleChangePassword}>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Current Password</label>
                     <input
                       type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     />
                   </div>
@@ -117,6 +247,8 @@ export default function SettingsPage() {
                     <label className="block text-sm font-medium text-gray-700">New Password</label>
                     <input
                       type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     />
                   </div>
@@ -124,15 +256,22 @@ export default function SettingsPage() {
                     <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
                     <input
                       type="password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     />
                   </div>
-                </div>
-                <div className="mt-4">
-                  <button className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                    Update Password
-                  </button>
-                </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={passwordIsSubmitting}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {passwordIsSubmitting ? 'Updating...' : 'Update Password'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>
