@@ -53,6 +53,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      # ⚠️ WARNING: If POSTGRES_PASSWORD contains special characters (/, @, :, etc.),
+      # you MUST use scripts/setup-database-url.sh to create /tmp/docker-compose.override.yml
+      # and include it with: -f /tmp/docker-compose.override.yml
+      # Direct variable substitution will fail for passwords with special characters!
       DATABASE_URL: postgresql://tas_user:${POSTGRES_PASSWORD}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}

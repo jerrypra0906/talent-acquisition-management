@@ -94,6 +94,29 @@ docker compose --env-file .env.local <command>
 
 ---
 
+## ⚠️ CRITICAL: Database Password with Special Characters
+
+**If your `POSTGRES_PASSWORD` contains special characters (like `/`, `@`, `:`, `#`, `?`, `&`, `=`, etc.), you MUST use the helper script `scripts/setup-database-url.sh` to properly URL-encode the password before starting the backend.**
+
+**Why?** The `DATABASE_URL` connection string requires URL-encoded passwords. If you use direct variable substitution (like `${POSTGRES_PASSWORD}`), special characters will break the connection string and cause "Database connection error" messages.
+
+**Solution:** Always run this before starting/restarting the backend:
+```bash
+cd /opt/tas-production
+./scripts/setup-database-url.sh .env.production
+docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production up -d backend
+```
+
+The script automatically:
+- Reads `POSTGRES_PASSWORD` from your `.env.production` file
+- URL-encodes it properly (e.g., `/` becomes `%2F`)
+- Creates `/tmp/docker-compose.override.yml` with the correctly encoded `DATABASE_URL`
+- Ensures the backend container receives a valid connection string
+
+**This is mandatory for all deployments and updates!**
+
+---
+
 ## Prerequisites
 
 ### 1. GitHub Authentication Setup
@@ -1033,12 +1056,12 @@ echo "JWT_SECRET is set: $([ -n "$JWT_SECRET" ] && echo 'YES' || echo 'NO')"
 # export CANDIDATE_PORTAL_URL="http://147.139.176.70:4002"
 # export CORS_ORIGIN="http://147.139.176.70:8080,http://147.139.176.70:4001,http://147.139.176.70:4002"
 
-# ⚠️ IMPORTANT: Set up DATABASE_URL with URL-encoded password first
+# ⚠️ CRITICAL: Set up DATABASE_URL with URL-encoded password first
 # This handles special characters in POSTGRES_PASSWORD (like /, @, etc.)
+# ALWAYS use the helper script - it's mandatory for passwords with special characters
 if [ -f "scripts/setup-database-url.sh" ]; then
   echo "Using helper script to set up DATABASE_URL..."
-  chmod +x scripts/setup-database-url.sh
-  source scripts/setup-database-url.sh .env.production
+  ./scripts/setup-database-url.sh .env.production
   OVERRIDE_FLAG="-f /tmp/docker-compose.override.yml"
 else
   echo "⚠️  Helper script not found. Using manual URL encoding..."
@@ -1274,8 +1297,8 @@ cd /opt/tas-production
 
 # Step 1: Use the helper script to set up DATABASE_URL with URL-encoded password
 # This script automatically handles special characters in POSTGRES_PASSWORD
-chmod +x scripts/setup-database-url.sh
-source scripts/setup-database-url.sh .env.production
+# ⚠️ MANDATORY: Always use this script when POSTGRES_PASSWORD contains special characters (/, @, :, etc.)
+./scripts/setup-database-url.sh .env.production
 
 # Step 2: Stop and recreate backend with proper environment
 docker compose -p tas-production stop backend
@@ -2160,7 +2183,7 @@ If the frontend build is taking too long (>15 minutes) or appears stuck:
    
    # If that works, continue with build stage
    docker build --target build --build-arg NEXT_PUBLIC_API_URL=http://tas.energi-up.com:8080/api -t tas-frontend-build ./frontend
-   ```
+```
 
 ---
 
@@ -3547,8 +3570,11 @@ git pull
 # Check what changed (optional - to see if rebuild is needed)
 git log --oneline -5
 
-# Export environment variables (needed for variable substitution)
-export POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+# ⚠️ CRITICAL: Always use the helper script to set up DATABASE_URL with URL-encoded password
+# This prevents database connection errors when POSTGRES_PASSWORD contains special characters
+./scripts/setup-database-url.sh .env.production
+
+# Export other environment variables (needed for variable substitution)
 export REDIS_PASSWORD="$(grep '^REDIS_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 export JWT_SECRET="$(grep '^JWT_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 export JWT_REFRESH_SECRET="$(grep '^JWT_REFRESH_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
@@ -3558,10 +3584,6 @@ export CANDIDATE_PORTAL_URL="$(grep '^CANDIDATE_PORTAL_URL=' .env.production | c
 export CORS_ORIGIN="$(grep '^CORS_ORIGIN=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 
 # If backend code changed, rebuild with override file (for DATABASE_URL)
-POSTGRES_PASSWORD_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${POSTGRES_PASSWORD}', safe=''))" 2>/dev/null || echo "${POSTGRES_PASSWORD}")
-DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENC}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
-printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > /tmp/docker-compose.override.yml
-
 docker compose -f docker-compose.network.yml -f /tmp/docker-compose.override.yml -p tas-production --env-file .env.production up -d --build backend
 
 # If only environment/config changed, just restart
@@ -3620,8 +3642,12 @@ echo "=== Pulling latest code from GitHub ==="
 git pull
 
 echo ""
-echo "=== Exporting environment variables ==="
-export POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
+echo "=== Setting up DATABASE_URL with URL-encoded password ==="
+# ⚠️ CRITICAL: Always use the helper script to handle special characters in POSTGRES_PASSWORD
+./scripts/setup-database-url.sh .env.production
+
+echo ""
+echo "=== Exporting other environment variables ==="
 export REDIS_PASSWORD="$(grep '^REDIS_PASSWORD=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 export JWT_SECRET="$(grep '^JWT_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 export JWT_REFRESH_SECRET="$(grep '^JWT_REFRESH_SECRET=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
@@ -3629,12 +3655,6 @@ export ENCRYPTION_KEY="$(grep '^ENCRYPTION_KEY=' .env.production | cut -d= -f2- 
 export FRONTEND_URL="$(grep '^FRONTEND_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 export CANDIDATE_PORTAL_URL="$(grep '^CANDIDATE_PORTAL_URL=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
 export CORS_ORIGIN="$(grep '^CORS_ORIGIN=' .env.production | cut -d= -f2- | sed 's/#.*$//' | xargs)"
-
-echo ""
-echo "=== Creating DATABASE_URL override ==="
-POSTGRES_PASSWORD_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${POSTGRES_PASSWORD}', safe=''))" 2>/dev/null || echo "${POSTGRES_PASSWORD}")
-DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENC}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
-printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > /tmp/docker-compose.override.yml
 
 echo ""
 echo "=== Rebuilding and restarting backend ==="
