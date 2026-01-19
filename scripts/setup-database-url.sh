@@ -49,15 +49,6 @@ fi
 # Construct DATABASE_URL with URL-encoded password
 DATABASE_URL_VALUE="postgresql://tas_user:${POSTGRES_PASSWORD_ENCODED}@postgres:5432/tas_db?schema=public&pool_timeout=0&connection_limit=20"
 
-# Export variables to shell environment
-export DATABASE_URL="$DATABASE_URL_VALUE"
-export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
-
-# Also export other required variables from env file
-set -a
-source <(grep -v '^#' "$ENV_FILE" | grep -v '^$' | grep '=' | sed 's/#.*$//' | sed 's/[[:space:]]*$//')
-set +a
-
 # Create docker-compose override file with properly encoded DATABASE_URL
 OVERRIDE_FILE="/tmp/docker-compose.override.yml"
 printf 'services:\n  backend:\n    environment:\n      DATABASE_URL: "%s"\n' "${DATABASE_URL_VALUE}" > "$OVERRIDE_FILE"
