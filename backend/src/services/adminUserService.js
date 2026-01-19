@@ -128,27 +128,27 @@ async function updateUser(id, data) {
   // Map role to enum value
   const mappedRole = mapRoleToEnum(data.role);
   
-  // Use raw SQL to avoid Prisma enum case sensitivity issues
-  // Escape single quotes in string values
-  const escapeSql = (str) => (str || '').replace(/'/g, "''");
-  const sql = `
-    UPDATE users 
-    SET "firstName" = '${escapeSql(data.firstName)}',
-        "lastName" = '${escapeSql(data.lastName)}',
-        email = '${escapeSql(data.email)}',
-        "phoneNumber" = ${data.phone ? `'${escapeSql(data.phone)}'` : 'NULL'},
-        role = '${escapeSql(mappedRole)}'::userrole,
-        division = ${data.division ? `'${escapeSql(data.division)}'` : 'NULL'},
-        department = ${data.sectionName ? `'${escapeSql(data.sectionName)}'` : 'NULL'},
-        pt = ${data.pt ? `'${escapeSql(data.pt)}'` : 'NULL'},
-        area = ${data.area ? `'${escapeSql(data.area)}'` : 'NULL'},
-        "areaDetail" = ${data.areaDetail ? `'${escapeSql(data.areaDetail)}'` : 'NULL'},
-        "updatedAt" = NOW()
-    WHERE id = '${escapeSql(id)}'
-    RETURNING *
-  `;
-  const result = await prisma.$queryRawUnsafe(sql);
-  return mapUser(result[0]);
+  // Use Prisma client to avoid enum type name mismatch issues
+  // Prisma handles enum mapping correctly
+  const updateData = {
+    firstName: data.firstName,
+    lastName: data.lastName,
+    email: data.email,
+    phoneNumber: data.phone || null,
+    role: mappedRole, // Prisma will map enum correctly
+    division: data.division || null,
+    department: data.sectionName || null,
+    pt: data.pt || null,
+    area: data.area || null,
+    areaDetail: data.areaDetail || null,
+  };
+  
+  const user = await prisma.user.update({
+    where: { id },
+    data: updateData,
+  });
+  
+  return mapUser(user);
 }
 
 async function updateStatus(id, isActive) {
