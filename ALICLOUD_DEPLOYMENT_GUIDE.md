@@ -1957,6 +1957,62 @@ curl -I http://147.139.176.70:8080
 | `Timeout` from browser | Check UFW firewall: `ufw allow 8080/tcp` |
 | NGINX not listening on 8080 | Check `HTTP_PORT` in `.env.production` and NGINX config |
 | Works locally but not from browser | Check AliCloud Security Group rules |
+| **Frontend build stuck/slow** | See troubleshooting section below |
+
+**Frontend Build Stuck or Very Slow:**
+
+If the frontend build is taking too long (>15 minutes) or appears stuck:
+
+1. **Check if build is actually progressing:**
+   ```bash
+   # In another terminal, check Docker build processes
+   docker ps -a
+   docker stats
+   ```
+
+2. **Cancel and retry with verbose output:**
+   ```bash
+   # Press Ctrl+C to cancel current build
+   # Then rebuild with verbose logging
+   docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production build --progress=plain --no-cache frontend
+   ```
+
+3. **Check system resources:**
+   ```bash
+   # Check available memory and disk space
+   free -h
+   df -h
+   # Frontend build needs at least 2GB free memory
+   ```
+
+4. **Try building without cache (clean build):**
+   ```bash
+   # Stop any running containers
+   docker compose -f docker-compose.frontend.yml -p tas-production down
+   
+   # Clean up Docker build cache
+   docker builder prune -f
+   
+   # Rebuild
+   docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production build --no-cache frontend
+   ```
+
+5. **If network is slow, increase npm timeout:**
+   ```bash
+   # Edit frontend/Dockerfile temporarily to add npm config
+   # Add before "RUN npm ci":
+   # RUN npm config set fetch-timeout 300000
+   # RUN npm config set fetch-retries 5
+   ```
+
+6. **Build in stages to identify which step is slow:**
+   ```bash
+   # Build only dependencies stage
+   docker build --target dependencies -t tas-frontend-deps ./frontend
+   
+   # If that works, continue with build stage
+   docker build --target build --build-arg NEXT_PUBLIC_API_URL=http://tas.energi-up.com:8080/api -t tas-frontend-build ./frontend
+   ```
 
 ---
 

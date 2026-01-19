@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Frontend server deployment (ECS-App)
 # This file is for FRONTEND SERVER ONLY - does not include backend, postgres, or redis
 # Usage: docker-compose -f docker-compose.frontend.yml -p tas-production up -d
