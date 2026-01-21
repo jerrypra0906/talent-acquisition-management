@@ -7,6 +7,8 @@ const { validationRules, validate } = require('../middleware/validator');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const documentService = require('../services/documentService');
 const candidateFormTokenService = require('../services/candidateFormTokenService');
+const { parseSpreadsheet, sendTemplate } = require('../utils/spreadsheet');
+const bulkImportService = require('../services/bulkImportService');
 
 /**
  * @route   GET /api/candidates/me
@@ -142,6 +144,54 @@ router.post(
       console.error('CREATE CANDIDATE - Error in route handler:', error);
       throw error; // Let asyncHandler handle it
     }
+  })
+);
+
+/**
+ * @route   GET /api/candidates/bulk-template
+ * @desc    Download candidate bulk upload template (CSV/XLSX)
+ * @access  Private (TA, HRBP, Admin)
+ */
+router.get(
+  '/bulk-template',
+  authenticate,
+  authorize('TA_TEAM', 'HRBP', 'SUPER_ADMIN', 'CHRO'),
+  asyncHandler(async (req, res) => {
+    const format = (req.query.format || 'csv').toString();
+    return sendTemplate(res, {
+      filenameBase: 'candidates-upload-template',
+      format,
+      headers: ['Name', 'Email', 'Phone Number', 'Position Applied For', 'Division'],
+    });
+  })
+);
+
+/**
+ * @route   POST /api/candidates/bulk-upload
+ * @desc    Bulk upload candidates from CSV/XLSX
+ * @access  Private (TA, HRBP, Admin)
+ */
+router.post(
+  '/bulk-upload',
+  authenticate,
+  authorize('TA_TEAM', 'HRBP', 'SUPER_ADMIN', 'CHRO'),
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    if (!req.files || !req.files.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded. Please attach a file field named "file".',
+      });
+    }
+
+    const { rows } = parseSpreadsheet(req.files.file.data);
+    const result = await bulkImportService.importCandidates(rows);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Candidate bulk upload processed',
+      data: result,
+    });
   })
 );
 

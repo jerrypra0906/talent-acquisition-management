@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
 import { PlusIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline'
 import { MasterOfficeLocationAPI } from '@/lib/api'
+import BulkUploadModal from '@/components/BulkUploadModal'
 
 interface OfficeLocation {
   id: string
@@ -26,6 +27,7 @@ export default function MasterOfficeLocationPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [selectedOfficeLocation, setSelectedOfficeLocation] = useState<OfficeLocation | null>(null)
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -123,7 +125,7 @@ export default function MasterOfficeLocationPage() {
         </div>
 
         {/* Search and Add Button */}
-        <div className="mb-6 flex justify-between items-center">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex-1 max-w-lg">
             <input
               type="text"
@@ -133,13 +135,21 @@ export default function MasterOfficeLocationPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            Add Office Location
-          </button>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <button
+              onClick={() => setIsBulkUploadOpen(true)}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-900 hover:bg-gray-50"
+            >
+              Bulk Upload
+            </button>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <PlusIcon className="h-5 w-5 mr-2" />
+              Add Office Location
+            </button>
+          </div>
         </div>
 
         {/* Office Locations Table */}
@@ -244,6 +254,18 @@ export default function MasterOfficeLocationPage() {
             officeLocation={selectedOfficeLocation}
           />
         )}
+
+        <BulkUploadModal
+          isOpen={isBulkUploadOpen}
+          title="Bulk Upload Master Office Locations"
+          templateName="master-office-locations-upload-template"
+          onClose={() => {
+            setIsBulkUploadOpen(false)
+            loadOfficeLocations()
+          }}
+          onDownloadTemplate={(format) => MasterOfficeLocationAPI.downloadTemplate(format)}
+          onUpload={(file) => MasterOfficeLocationAPI.bulkUpload(file)}
+        />
       </div>
     </Layout>
   )

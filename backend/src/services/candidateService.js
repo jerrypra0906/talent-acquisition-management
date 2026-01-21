@@ -111,7 +111,7 @@ async function createCandidate(data) {
         '${escapeSql(firstName)}',
         '${escapeSql(lastName)}',
         ${phoneNumber ? `'${escapeSql(phoneNumber)}'` : 'NULL'},
-        'CANDIDATE'::userrole,
+        'CANDIDATE'::"UserRole",
         ${divisionValue ? `'${escapeSql(divisionValue)}'` : 'NULL'},
         false,
         NULL,

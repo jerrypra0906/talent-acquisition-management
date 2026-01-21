@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
 import { PlusIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline'
 import { MasterDivisionAPI, AdminUsersAPI } from '@/lib/api'
+import BulkUploadModal from '@/components/BulkUploadModal'
 
 interface Division {
   id: string
@@ -26,6 +27,7 @@ export default function MasterDivisionPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [selectedDivision, setSelectedDivision] = useState<Division | null>(null)
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -143,7 +145,7 @@ export default function MasterDivisionPage() {
         </div>
 
         {/* Search and Add Button */}
-        <div className="mb-6 flex justify-between items-center">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex-1 max-w-lg">
             <input
               type="text"
@@ -153,14 +155,23 @@ export default function MasterDivisionPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
-          <button
-            disabled={!canCreate}
-            onClick={() => canCreate && setIsAddModalOpen(true)}
-            className={`ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white ${canCreate ? 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500' : 'bg-gray-300 cursor-not-allowed'}`}
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            Add Division
-          </button>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <button
+              disabled={!canCreate}
+              onClick={() => canCreate && setIsBulkUploadOpen(true)}
+              className={`inline-flex items-center px-4 py-2 border text-sm font-medium rounded-md ${canCreate ? 'border-gray-300 text-gray-900 hover:bg-gray-50' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}
+            >
+              Bulk Upload
+            </button>
+            <button
+              disabled={!canCreate}
+              onClick={() => canCreate && setIsAddModalOpen(true)}
+              className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white ${canCreate ? 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500' : 'bg-gray-300 cursor-not-allowed'}`}
+            >
+              <PlusIcon className="h-5 w-5 mr-2" />
+              Add Division
+            </button>
+          </div>
         </div>
 
         {/* Divisions Table */}
@@ -264,6 +275,18 @@ export default function MasterDivisionPage() {
             division={selectedDivision}
           />
         )}
+
+        <BulkUploadModal
+          isOpen={isBulkUploadOpen}
+          title="Bulk Upload Master Divisions"
+          templateName="master-divisions-upload-template"
+          onClose={() => {
+            setIsBulkUploadOpen(false)
+            loadDivisions()
+          }}
+          onDownloadTemplate={(format) => MasterDivisionAPI.downloadTemplate(format)}
+          onUpload={(file) => MasterDivisionAPI.bulkUpload(file)}
+        />
       </div>
     </Layout>
   )

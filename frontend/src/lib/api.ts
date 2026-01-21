@@ -159,6 +159,21 @@ export const MasterDivisionAPI = {
   async delete(id: string) {
     await api.delete(`/masters/divisions/${id}`)
   },
+  async downloadTemplate(format: 'csv' | 'xlsx' = 'csv') {
+    const res = await api.get('/masters/divisions/bulk-template', {
+      params: { format },
+      responseType: 'blob',
+    })
+    return res.data as Blob
+  },
+  async bulkUpload(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post('/masters/divisions/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
 }
 
 // Master Office Location APIs
@@ -181,6 +196,21 @@ export const MasterOfficeLocationAPI = {
   },
   async delete(id: string) {
     await api.delete(`/masters/office-locations/${id}`)
+  },
+  async downloadTemplate(format: 'csv' | 'xlsx' = 'csv') {
+    const res = await api.get('/masters/office-locations/bulk-template', {
+      params: { format },
+      responseType: 'blob',
+    })
+    return res.data as Blob
+  },
+  async bulkUpload(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post('/masters/office-locations/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
   },
 }
 
@@ -289,6 +319,21 @@ export const CandidatesAPI = {
       console.error('Error response:', error.response?.data)
       throw error
     }
+  },
+  async downloadTemplate(format: 'csv' | 'xlsx' = 'csv') {
+    const res = await api.get('/candidates/bulk-template', {
+      params: { format },
+      responseType: 'blob',
+    })
+    return res.data as Blob
+  },
+  async bulkUpload(file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post('/candidates/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
   },
   async update(id: string, payload: any) {
     console.log('CandidatesAPI.update called with:', id, payload)

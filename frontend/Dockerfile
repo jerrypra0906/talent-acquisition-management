@@ -1,6 +1,9 @@
 # Multi-stage build for Next.js
 FROM node:22-alpine AS base
-RUN apk add --no-cache libc6-compat
+# NOTE: libc6-compat is optional for many Next.js standalone builds.
+# In some environments Alpine package mirrors may be unreachable (DNS/proxy),
+# causing builds to fail. If you hit runtime issues, re-enable this line.
+# RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Dependencies
