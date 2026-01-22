@@ -422,11 +422,12 @@ useEffect(() => {
   const fetchAllPositions = async (): Promise<any[]> => {
     if (!isAuthenticated) return []
     const limit = 100
+    const maxPages = 50 // Safety limit: prevent infinite loops (max 5000 records)
     let page = 1
     let hasMore = true
     let positions: any[] = []
 
-  while (hasMore) {
+  while (hasMore && page <= maxPages) {
     const response = await FPTKAPI.getAll({}, { page, limit })
     const data = Array.isArray(response?.data) ? response.data : []
     const mapped = data.map((fptk: any) => mapApiFptk(fptk))
@@ -439,6 +440,10 @@ useEffect(() => {
         hasMore = data.length === limit
       }
       page += 1
+    }
+    
+    if (page > maxPages) {
+      console.warn(`fetchAllPositions: Reached maximum page limit (${maxPages}). Some positions may not be loaded.`)
     }
 
     if (typeof window !== 'undefined') {
@@ -459,6 +464,7 @@ useEffect(() => {
 
     try {
       const limit = 100
+      const maxPages = 50 // Safety limit: prevent infinite loops (max 5000 records)
       let page = 1
       let hasMore = true
       const weekRange = getCurrentWeekRange()
@@ -467,7 +473,7 @@ useEffect(() => {
       const hiredItems: DashboardListItem[] = []
       const pendingItems: DashboardListItem[] = []
 
-      while (hasMore) {
+      while (hasMore && page <= maxPages) {
         const response = await ApplicationsAPI.getAll({}, { page, limit })
         const data = Array.isArray(response?.data) ? response.data : []
 
@@ -487,6 +493,10 @@ useEffect(() => {
           hasMore = data.length === limit
         }
         page += 1
+      }
+      
+      if (page > maxPages) {
+        console.warn(`loadApplicationInsights: Reached maximum page limit (${maxPages}). Some applications may not be loaded.`)
       }
 
       setInterviewDetailItems(interviewItems)

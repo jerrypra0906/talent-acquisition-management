@@ -3497,6 +3497,211 @@ docker compose -p tas-production logs --tail=50 backend
 
 ---
 
+## Container Health and Monitoring
+
+### Why Containers Become Unresponsive
+
+Containers can become unresponsive or crash for several reasons:
+
+#### 1. **Security Compromise** (Most Critical)
+**Symptoms:**
+- Permission errors on suspicious paths (`/etc/lrt`, `/lrt`)
+- Connection attempts to unknown external IPs
+- Unexpected JavaScript errors (`ReferenceError`, `TypeError`)
+- Container appears running but doesn't respond to requests
+
+**Causes:**
+- Malicious code injection
+- Compromised dependencies
+- Unauthorized access to container
+
+**Prevention:**
+- Regularly rebuild containers from trusted source code
+- Monitor container logs for suspicious activity
+- Use `--no-cache` flag when rebuilding to ensure clean builds
+- Keep dependencies updated and scan for vulnerabilities
+
+#### 2. **Memory/Resource Exhaustion**
+**Symptoms:**
+- Container running but not responding
+- Timeout errors
+- Process crashes after extended uptime
+
+**Causes:**
+- Memory leaks in application code
+- Insufficient memory limits
+- File descriptor limits exceeded
+
+**Prevention:**
+- Set memory limits in Docker Compose:
+  ```yaml
+  services:
+    frontend:
+      deploy:
+        resources:
+          limits:
+            memory: 1G
+          reservations:
+            memory: 512M
+  ```
+- Monitor container resource usage: `docker stats`
+- Implement periodic container restarts (e.g., daily via cron)
+
+#### 3. **File System Corruption**
+**Symptoms:**
+- Permission denied errors
+- Missing files or corrupted build artifacts
+- Container can't read/write files
+
+**Causes:**
+- Disk space exhaustion
+- Filesystem errors
+- Corrupted Docker volumes
+
+**Prevention:**
+- Monitor disk space: `df -h`
+- Regularly clean up unused Docker resources: `docker system prune -a`
+- Use health checks to detect issues early
+
+#### 4. **Build Artifacts Corruption**
+**Symptoms:**
+- Container starts but application doesn't work
+- Runtime errors about missing files
+- Build succeeds but runtime fails
+
+**Causes:**
+- Interrupted builds
+- Corrupted `.next` or build directories
+- Incomplete dependency installation
+
+**Prevention:**
+- Always use `--build` flag when code changes
+- Use `--no-cache` periodically to ensure clean builds
+- Verify build artifacts before deployment
+
+### Preventive Maintenance
+
+#### Daily Health Checks
+
+Create a cron job to check container health:
+
+```bash
+# Add to crontab: crontab -e
+# Check container health every hour
+0 * * * * cd /opt/tas-production && docker ps --filter "name=tas-production" --format "{{.Names}}: {{.Status}}" | grep -v "Up" && echo "ALERT: Container down!" | mail -s "Container Alert" admin@example.com
+```
+
+#### Weekly Container Restart (Recommended)
+
+Restart containers weekly to prevent memory leaks and corruption:
+
+```bash
+# Add to crontab: crontab -e
+# Restart containers every Sunday at 3 AM
+0 3 * * 0 cd /opt/tas-production && docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production restart frontend candidate-portal nginx
+```
+
+#### Monthly Full Rebuild
+
+Rebuild containers monthly with `--no-cache` to ensure clean state:
+
+```bash
+# Add to crontab: crontab -e
+# Full rebuild on 1st of each month at 2 AM
+0 2 1 * * cd /opt/tas-production && export $(grep -v '^#' .env.production | xargs) && docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production up -d --build --no-cache frontend candidate-portal
+```
+
+### High CPU Usage (100% CPU Spike)
+
+**Problem:** Frontend container spikes to 100% CPU when started, causing server performance issues.
+
+**Root Causes:**
+1. **No resource limits** - Container can use unlimited CPU/memory
+2. **Heavy data loading on startup** - Dashboard paginates through ALL records (positions, applications) on every page load
+3. **Infinite pagination loops** - While loops can run indefinitely if pagination logic fails
+4. **No memory limits** - Node.js can consume all available memory
+
+**Solution Applied:**
+1. **Added CPU/Memory limits** in `docker-compose.frontend.yml`:
+   - CPU limit: 1.0 core maximum
+   - Memory limit: 1GB maximum, 512MB reserved
+   - Node.js memory limit: 512MB via `NODE_OPTIONS=--max-old-space-size=512`
+
+2. **Added pagination safety limits** in dashboard code:
+   - Maximum 50 pages per data fetch (5000 records max)
+   - Prevents infinite loops and excessive CPU usage
+
+**Verify Resource Limits:**
+```bash
+# Check if limits are applied
+docker inspect tas_frontend | grep -A 10 "Resources"
+
+# Monitor CPU/memory usage
+docker stats --no-stream tas_frontend
+```
+
+**If CPU still spikes after applying limits:**
+1. Check if limits are actually applied: `docker inspect tas_frontend | grep Resources`
+2. Check container logs for errors: `docker logs --tail=100 tas_frontend`
+3. Consider reducing the `maxPages` limit in `frontend/src/app/page.tsx` if you have very large datasets
+4. Implement lazy loading or caching for dashboard data
+
+### Monitoring Commands
+
+#### Check Container Health
+```bash
+# Quick status check
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Detailed health check
+docker inspect tas_frontend | grep -A 5 Health
+
+# Resource usage
+docker stats --no-stream tas_frontend tas_backend
+```
+
+#### Check Container Logs for Issues
+```bash
+# Recent errors
+docker logs --tail=100 tas_frontend | grep -i error
+
+# Suspicious activity
+docker logs --tail=1000 tas_frontend | grep -E "(EACCES|ETIMEDOUT|permission|denied)"
+
+# Check for external connections
+docker logs --tail=1000 tas_frontend | grep -E "connect.*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"
+```
+
+#### Test Container Responsiveness
+```bash
+# Test frontend from NGINX container
+docker exec tas_nginx curl -i http://frontend:3000/ --max-time 5
+
+# Test backend from frontend server
+curl -i http://8.215.56.98:4000/health --max-time 5
+```
+
+### When to Rebuild vs Restart
+
+**Rebuild (`--build`) when:**
+- Application code changed
+- Dependencies changed (`package.json`, `requirements.txt`)
+- Dockerfile changed
+- Container becomes unresponsive (after checking logs)
+- Suspicious activity detected in logs
+
+**Restart (no `--build`) when:**
+- Only environment variables changed
+- Configuration files changed (not code)
+- Container is healthy but needs refresh
+- Scheduled maintenance
+
+**Force Rebuild (`--no-cache`) when:**
+- Container keeps failing after normal rebuild
+- Suspected corruption or compromise
+- Monthly maintenance
+- After security incident
+
 ## Maintenance Commands
 
 ### Update Application
