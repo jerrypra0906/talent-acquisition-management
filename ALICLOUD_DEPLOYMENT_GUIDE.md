@@ -3451,6 +3451,138 @@ docker compose -p tas-production logs --tail=50 backend
 3. Check browser console for exact error
 4. Verify frontend and backend are using the same environment (testing or production)
 
+### CV Upload Failed: Internal Server Error
+
+**Problem:** "Candidate updated, but uploading CV failed: Internal server error" when uploading CV for candidates.
+
+**Root Causes:**
+1. **Permission denied** - Uploads directory not writable by container user
+2. **Directory doesn't exist** - Uploads directory not created on host
+3. **File size exceeds limit** - CV file larger than 10MB (NGINX or backend limit)
+4. **Disk space full** - No space available for file uploads
+
+**Solution:**
+
+1. **Check backend logs for exact error:**
+   ```bash
+   # On backend server
+   docker logs --tail=100 tas_backend | grep -i "upload\|error\|permission\|EACCES"
+   ```
+
+2. **Create uploads directory with proper permissions (CRITICAL FIX):**
+   ```bash
+   cd /opt/tas-production
+   
+   # Stop backend first to avoid permission conflicts
+   docker compose -f docker-compose.network.yml -p tas-production stop backend
+   
+   # Create directories with proper structure
+   mkdir -p backend/uploads/candidates
+   mkdir -p backend/logs
+   
+   # Set permissions to allow container user to write (UID 1001 = nodejs user)
+   # Option 1: Use 777 (most permissive, works for all users)
+   chmod -R 777 backend/uploads backend/logs
+   
+   # Option 2: Set ownership to container user (more secure)
+   # First, check what UID the container user has:
+   docker run --rm node:22-alpine id
+   # Then set ownership (usually 1001:1001 for nodejs user in Alpine)
+   chown -R 1001:1001 backend/uploads backend/logs
+   
+   # Verify permissions
+   ls -la backend/uploads
+   # Should show: drwxrwxrwx or drwxr-xr-x
+   
+   # Restart backend
+   docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production start backend
+   ```
+
+3. **Verify permissions:**
+   ```bash
+   ls -la backend/uploads
+   # Should show drwxrwxrwx or drwxr-xr-x with proper ownership
+   ```
+
+4. **Check file size limits:**
+   ```bash
+   # Check NGINX config (should be 10M or higher)
+   grep client_max_body_size nginx/nginx.network.conf
+   
+   # Check backend MAX_FILE_SIZE env var (default 10MB)
+   docker exec tas_backend printenv MAX_FILE_SIZE
+   ```
+
+5. **Check disk space:**
+   ```bash
+   df -h
+   # Ensure /opt/tas-production has sufficient space
+   ```
+
+6. **Restart backend after fixing permissions:**
+   ```bash
+   docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production restart backend
+   ```
+
+7. **Test upload:**
+   ```bash
+   # Check if directory is writable inside container
+   docker exec tas_backend ls -la /app/uploads
+   docker exec tas_backend touch /app/uploads/test.txt && docker exec tas_backend rm /app/uploads/test.txt
+   ```
+
+**If still failing, check backend logs for specific error:**
+```bash
+docker logs --tail=200 tas_backend | grep -A 10 "UPLOAD\|upload\|document"
+```
+
+### CV Download Redirects to Wrong Website
+
+**Problem:** When clicking to download CV, user is redirected to "project & change request management website" instead of downloading the file.
+
+**Root Cause:** NGINX doesn't have a location block for `/uploads/`, so requests are being proxied to the frontend instead of the backend where static files are served.
+
+**Solution:**
+
+1. **Verify NGINX config has `/uploads/` location block:**
+   ```bash
+   # On frontend server
+   grep -A 10 "location /uploads" nginx/nginx.network.conf
+   ```
+
+2. **If missing, the config should include:**
+   ```nginx
+   location /uploads/ {
+       proxy_pass http://backend;
+       proxy_http_version 1.1;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+       proxy_buffering off;
+       proxy_request_buffering off;
+       proxy_read_timeout 300s;
+       proxy_connect_timeout 75s;
+   }
+   ```
+
+3. **Restart NGINX after updating config:**
+   ```bash
+   # On frontend server
+   cd /opt/tas-production
+   docker compose -f docker-compose.frontend.yml -p tas-production restart nginx
+   
+   # Verify NGINX config is valid
+   docker exec tas_nginx nginx -t
+   ```
+
+4. **Test download:**
+   ```bash
+   # Test from frontend server
+   curl -I http://localhost:8080/uploads/candidates/37df357e-38e7-4e45-a34f-9bb7b20030d3/fa66f7b4-9d36-4f13-b40f-775996d80431.pdf
+   # Should return 200 OK with Content-Type: application/pdf
+   ```
+
 ### Permission Denied Errors (Logs/Uploads)
 
 **Problem:** `EACCES: permission denied, open 'logs/error-2026-01-13.log'`
@@ -3471,8 +3603,8 @@ docker compose -p tas-production logs --tail=50 backend
    # Fix permissions
    chmod -R 777 backend/logs backend/uploads
    
-   # Or set ownership to container user (usually UID 1000)
-   chown -R 1000:1000 backend/logs backend/uploads
+   # Or set ownership to container user (UID 1001 for nodejs user)
+   chown -R 1001:1001 backend/logs backend/uploads
    
    # Restart containers
    docker compose -p tas-production start backend

@@ -90,17 +90,43 @@ async function uploadCandidateDocument(candidateId, file, options = {}) {
 
   const uploadsRoot = path.join(__dirname, '../../uploads');
   const candidateDirectory = path.join(uploadsRoot, 'candidates', candidateId);
-  await ensureDirectory(candidateDirectory);
+  
+  try {
+    await ensureDirectory(candidateDirectory);
+    logger.info(`[UPLOAD] Directory ensured: ${candidateDirectory}`);
+  } catch (error) {
+    logger.error(`[UPLOAD] Failed to create directory ${candidateDirectory}: ${error.message}`, error);
+    throw new Error(`Failed to create upload directory: ${error.message}`);
+  }
 
   const originalName = sanitizeFileName(file.name || 'document');
   const uniqueName = `${uuidv4()}${extension}`;
   const absolutePath = path.join(candidateDirectory, uniqueName);
 
+  logger.info(`[UPLOAD] Attempting to save file: ${absolutePath} (${file.size} bytes)`);
+  
   try {
     await moveUploadedFile(file, absolutePath);
+    logger.info(`[UPLOAD] File successfully saved to: ${absolutePath}`);
+    
+    // Verify file was actually written
+    try {
+      const stats = await fs.stat(absolutePath);
+      logger.info(`[UPLOAD] File verified: ${stats.size} bytes on disk`);
+    } catch (statError) {
+      logger.error(`[UPLOAD] File was not written correctly: ${statError.message}`);
+      throw new Error('File was not saved correctly');
+    }
   } catch (error) {
-    logger.error(`Failed to store uploaded document for candidate ${candidateId}: ${error.message}`);
-    throw new Error('Failed to save uploaded file');
+    logger.error(`[UPLOAD] Failed to store uploaded document for candidate ${candidateId}: ${error.message}`, error);
+    logger.error(`[UPLOAD] Error details:`, {
+      code: error.code,
+      errno: error.errno,
+      syscall: error.syscall,
+      path: error.path,
+      stack: error.stack
+    });
+    throw new Error(`Failed to save uploaded file: ${error.message}`);
   }
 
   const relativePath = path.posix.join('uploads', 'candidates', candidateId, uniqueName);
