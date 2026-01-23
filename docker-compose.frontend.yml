@@ -56,7 +56,7 @@ services:
       - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx/nginx.network.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - frontend
       - candidate-portal

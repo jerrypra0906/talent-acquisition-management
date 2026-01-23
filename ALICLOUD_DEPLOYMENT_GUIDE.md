@@ -4293,9 +4293,86 @@ Keep a record of which ports are used by which applications:
    - Update NGINX `server_name` directives
 
 2. **Setup SSL/HTTPS** (required for production):
-   - Use Let's Encrypt with Certbot
-   - Update NGINX configuration for HTTPS
-   - Update `FRONTEND_URL` and `CORS_ORIGIN` to use `https://`
+   
+   **Step 1: Place SSL Certificates**
+   
+   Place your SSL certificate files in the `ssl/` directory on the frontend server:
+   
+   ```bash
+   cd /opt/tas-production
+   
+   # Ensure ssl directory exists
+   mkdir -p ssl
+   
+   # Copy your certificate files (replace with your actual file names)
+   # Required files:
+   # - fullchain.pem (certificate + intermediate chain)
+   # - privkey.pem (private key)
+   cp /path/to/your/fullchain.pem ssl/
+   cp /path/to/your/privkey.pem ssl/
+   
+   # Set correct permissions
+   chmod 644 ssl/fullchain.pem
+   chmod 600 ssl/privkey.pem
+   ```
+   
+   **Step 2: Verify SSL Configuration**
+   
+   The NGINX configuration (`nginx/nginx.network.conf`) is already configured for SSL:
+   - HTTP (port 8080) automatically redirects to HTTPS
+   - HTTPS listens on port 443 (mapped to `HTTPS_PORT` in docker-compose, default: 8443)
+   - SSL certificates are mounted from `./ssl` to `/etc/nginx/ssl` in the container
+   
+   **Step 3: Update Environment Variables**
+   
+   Ensure `HTTPS_PORT` is set in `.env.production`:
+   
+   ```bash
+   # In .env.production
+   HTTPS_PORT=8443  # Or 443 if using standard port
+   ```
+   
+   **Step 4: Update Application URLs**
+   
+   Update `FRONTEND_URL` and `CORS_ORIGIN` in `.env.production` to use `https://`:
+   
+   ```bash
+   # Update these in .env.production
+   FRONTEND_URL=https://tas.energi-up.com:8443
+   CORS_ORIGIN=https://tas.energi-up.com:8443,https://147.139.176.70:8443
+   ```
+   
+   **Step 5: Restart NGINX Container**
+   
+   ```bash
+   cd /opt/tas-production
+   
+   # Test NGINX configuration
+   docker compose -f docker-compose.frontend.yml -p tas-production exec nginx nginx -t
+   
+   # Restart NGINX to load SSL certificates
+   docker compose -f docker-compose.frontend.yml -p tas-production restart nginx
+   
+   # Check logs for SSL errors
+   docker compose -f docker-compose.frontend.yml -p tas-production logs nginx
+   ```
+   
+   **Step 6: Verify SSL is Working**
+   
+   ```bash
+   # Test HTTPS endpoint
+   curl -k https://tas.energi-up.com:8443/health
+   
+   # Check SSL certificate
+   openssl s_client -connect tas.energi-up.com:8443 -servername tas.energi-up.com
+   ```
+   
+   **Troubleshooting SSL Issues:**
+   
+   - **Certificate not found**: Ensure `fullchain.pem` and `privkey.pem` exist in `ssl/` directory
+   - **Permission denied**: Check file permissions (`chmod 644 fullchain.pem`, `chmod 600 privkey.pem`)
+   - **Port not accessible**: Check AliCloud Security Group allows `HTTPS_PORT` (default: 8443)
+   - **Redirect loop**: Verify `HTTPS_PORT` matches the port in the redirect URL in `nginx.network.conf`
 
 3. **Monitoring**:
    - Set up log rotation
