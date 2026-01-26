@@ -24,7 +24,10 @@ services:
     cpus: '1.0'           # Limit to 1 CPU core
     mem_limit: 1g         # Limit to 1GB RAM
     networks:
-      - tas_network
+      tas_network:
+        aliases:
+          - frontend
+          - tas_frontend
 
   # Candidate Portal
   candidate-portal:
@@ -44,7 +47,10 @@ services:
     cpus: '1.0'           # Limit to 1 CPU core
     mem_limit: 1g         # Limit to 1GB RAM
     networks:
-      - tas_network
+      tas_network:
+        aliases:
+          - candidate-portal
+          - tas_candidate_portal
 
   # Nginx Reverse Proxy
   nginx:
@@ -62,6 +68,13 @@ services:
       - candidate-portal
     networks:
       - tas_network
+    # Healthcheck to detect when nginx can't reach upstreams
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
   tas_network:
