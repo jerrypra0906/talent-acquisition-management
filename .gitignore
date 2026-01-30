@@ -1,1 +1,9 @@
 node_modules
+
+# SSL Certificates (sensitive files - should not be committed)
+ssl/*.pem
+ssl/*.key
+ssl/*.crt
+ssl/*.p12
+ssl/*.pfx
+!ssl/README.md

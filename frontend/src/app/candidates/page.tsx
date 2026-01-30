@@ -19,6 +19,7 @@ import { PlusIcon, MagnifyingGlassIcon, LinkIcon } from '@heroicons/react/24/out
 import { Candidate, CandidateStatus, CandidateFile } from '@/types'
 import { saveCandidateLink } from '@/utils/candidateLink'
 import { CandidatesAPI, MenuAccessAPI } from '@/lib/api'
+import BulkUploadModal from '@/components/BulkUploadModal'
 
 const mockCandidates: Candidate[] = [
   {
@@ -383,6 +384,7 @@ export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [generatedLink, setGeneratedLink] = useState<string | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
 
   // Load candidates from API
   const loadCandidates = async () => {
@@ -993,7 +995,15 @@ export default function CandidatesPage() {
               Manage and track all candidate information and applications.
             </p>
           </div>
-          <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+          <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none flex gap-2 justify-end">
+            <button
+              type="button"
+              disabled={!canCreate}
+              onClick={() => canCreate && setIsBulkUploadOpen(true)}
+              className={`block rounded-md px-3 py-2 text-center text-sm font-semibold shadow-sm ring-1 ring-inset ${canCreate ? 'text-gray-900 ring-gray-300 hover:bg-gray-50' : 'text-gray-400 ring-gray-200 cursor-not-allowed'}`}
+            >
+              Bulk Upload
+            </button>
             <button
               type="button"
               disabled={!canCreate}
@@ -1299,6 +1309,18 @@ export default function CandidatesPage() {
             </div>
           </div>
         )}
+
+        <BulkUploadModal
+          isOpen={isBulkUploadOpen}
+          title="Bulk Upload Candidates"
+          templateName="candidates-upload-template"
+          onClose={() => setIsBulkUploadOpen(false)}
+          onDownloadTemplate={(format) => CandidatesAPI.downloadTemplate(format)}
+          onUpload={(file) => CandidatesAPI.bulkUpload(file)}
+          onUploaded={async () => {
+            await loadCandidates()
+          }}
+        />
       </div>
     </Layout>
   )

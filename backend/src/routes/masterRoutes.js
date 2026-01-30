@@ -5,6 +5,8 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const masterDivisionService = require('../services/masterDivisionService');
 const masterOfficeLocationService = require('../services/masterOfficeLocationService');
 const { validationRules, validate } = require('../middleware/validator');
+const { parseSpreadsheet, sendTemplate } = require('../utils/spreadsheet');
+const bulkImportService = require('../services/bulkImportService');
 
 // ==================== MASTER DIVISION ROUTES ====================
 
@@ -33,6 +35,73 @@ router.get(
 );
 
 /**
+ * @route   POST /api/masters/divisions
+ * @desc    Create division
+ * @access  Private (TA, Admin)
+ */
+router.post(
+  '/divisions',
+  authenticate,
+  authorize('TA_TEAM', 'SUPER_ADMIN'),
+  asyncHandler(async (req, res) => {
+    const division = await masterDivisionService.createDivision(req.body);
+
+    res.status(201).json({
+      success: true,
+      message: 'Division created successfully',
+      data: division,
+    });
+  })
+);
+
+/**
+ * @route   GET /api/masters/divisions/bulk-template
+ * @desc    Download master divisions upload template (CSV/XLSX)
+ * @access  Private (TA, Admin)
+ */
+router.get(
+  '/divisions/bulk-template',
+  authenticate,
+  authorize('TA_TEAM', 'SUPER_ADMIN'),
+  asyncHandler(async (req, res) => {
+    const format = (req.query.format || 'csv').toString();
+    return sendTemplate(res, {
+      filenameBase: 'master-divisions-upload-template',
+      format,
+      headers: ['Division Name', 'Section Name', 'Head of Division Name'],
+    });
+  })
+);
+
+/**
+ * @route   POST /api/masters/divisions/bulk-upload
+ * @desc    Bulk upload master divisions from CSV/XLSX
+ * @access  Private (TA, Admin)
+ */
+router.post(
+  '/divisions/bulk-upload',
+  authenticate,
+  authorize('TA_TEAM', 'SUPER_ADMIN'),
+  asyncHandler(async (req, res) => {
+    if (!req.files || !req.files.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded. Please attach a file field named "file".',
+      });
+    }
+
+    const { rows } = parseSpreadsheet(req.files.file.data);
+    const result = await bulkImportService.importMasterDivisions(rows);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Master divisions bulk upload processed',
+      data: result,
+    });
+  })
+);
+
+/**
  * @route   GET /api/masters/divisions/:id
  * @desc    Get division by ID
  * @access  Private (TA, HRBP, Admin)
@@ -48,26 +117,6 @@ router.get(
 
     res.json({
       success: true,
-      data: division,
-    });
-  })
-);
-
-/**
- * @route   POST /api/masters/divisions
- * @desc    Create division
- * @access  Private (TA, Admin)
- */
-router.post(
-  '/divisions',
-  authenticate,
-  authorize('TA_TEAM', 'SUPER_ADMIN'),
-  asyncHandler(async (req, res) => {
-    const division = await masterDivisionService.createDivision(req.body);
-
-    res.status(201).json({
-      success: true,
-      message: 'Division created successfully',
       data: division,
     });
   })
@@ -144,6 +193,73 @@ router.get(
 );
 
 /**
+ * @route   POST /api/masters/office-locations
+ * @desc    Create office location
+ * @access  Private (TA, Admin)
+ */
+router.post(
+  '/office-locations',
+  authenticate,
+  authorize('TA_TEAM', 'SUPER_ADMIN'),
+  asyncHandler(async (req, res) => {
+    const officeLocation = await masterOfficeLocationService.createOfficeLocation(req.body);
+
+    res.status(201).json({
+      success: true,
+      message: 'Office location created successfully',
+      data: officeLocation,
+    });
+  })
+);
+
+/**
+ * @route   GET /api/masters/office-locations/bulk-template
+ * @desc    Download master office locations upload template (CSV/XLSX)
+ * @access  Private (TA, Admin)
+ */
+router.get(
+  '/office-locations/bulk-template',
+  authenticate,
+  authorize('TA_TEAM', 'SUPER_ADMIN'),
+  asyncHandler(async (req, res) => {
+    const format = (req.query.format || 'csv').toString();
+    return sendTemplate(res, {
+      filenameBase: 'master-office-locations-upload-template',
+      format,
+      headers: ['PT', 'Area', 'Area Detail'],
+    });
+  })
+);
+
+/**
+ * @route   POST /api/masters/office-locations/bulk-upload
+ * @desc    Bulk upload master office locations from CSV/XLSX
+ * @access  Private (TA, Admin)
+ */
+router.post(
+  '/office-locations/bulk-upload',
+  authenticate,
+  authorize('TA_TEAM', 'SUPER_ADMIN'),
+  asyncHandler(async (req, res) => {
+    if (!req.files || !req.files.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded. Please attach a file field named "file".',
+      });
+    }
+
+    const { rows } = parseSpreadsheet(req.files.file.data);
+    const result = await bulkImportService.importMasterOfficeLocations(rows);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Master office locations bulk upload processed',
+      data: result,
+    });
+  })
+);
+
+/**
  * @route   GET /api/masters/office-locations/:id
  * @desc    Get office location by ID
  * @access  Private (TA, HRBP, Admin)
@@ -159,26 +275,6 @@ router.get(
 
     res.json({
       success: true,
-      data: officeLocation,
-    });
-  })
-);
-
-/**
- * @route   POST /api/masters/office-locations
- * @desc    Create office location
- * @access  Private (TA, Admin)
- */
-router.post(
-  '/office-locations',
-  authenticate,
-  authorize('TA_TEAM', 'SUPER_ADMIN'),
-  asyncHandler(async (req, res) => {
-    const officeLocation = await masterOfficeLocationService.createOfficeLocation(req.body);
-
-    res.status(201).json({
-      success: true,
-      message: 'Office location created successfully',
       data: officeLocation,
     });
   })

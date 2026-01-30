@@ -1,6 +1,9 @@
 # Multi-stage build for Next.js
 FROM node:22-alpine AS base
-RUN apk add --no-cache libc6-compat
+# NOTE: libc6-compat is optional for many Next.js standalone builds.
+# In some environments Alpine package mirrors may be unreachable (DNS/proxy),
+# causing builds to fail. If you hit runtime issues, re-enable this line.
+# RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Dependencies
@@ -30,5 +33,7 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Bind to 0.0.0.0 to allow connections from other Docker containers
+# Next.js standalone server.js uses HOSTNAME env var or defaults to localhost
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 PORT=3000 node server.js"]
 

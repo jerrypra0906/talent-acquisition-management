@@ -1426,6 +1426,9 @@ export default function CreateJobPostingModal({ isOpen, onClose, onSave, editing
                 <option value="Medical Check Up (MCU)">Medical Check Up (MCU)</option>
                 <option value="Signing">Signing</option>
                 <option value="On Boarding">On Boarding</option>
+                <option value="Hold">Hold</option>
+                <option value="Cancel">Cancel</option>
+                <option value="Re-Open">Re-Open</option>
               </select>
             </div>
           </div>

@@ -17,8 +17,20 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # Limit Node.js memory to prevent excessive usage
+      NODE_OPTIONS: --max-old-space-size=512
+      # Bind Next.js server to all interfaces (required for Docker networking)
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    # Resource limits to prevent 100% CPU usage
+    # Note: Using Docker Compose v3.8 compatible syntax
+    cpus: '1.0'           # Limit to 1 CPU core
+    mem_limit: 1g         # Limit to 1GB RAM
     networks:
-      - tas_network
+      tas_network:
+        aliases:
+          - frontend
+          - tas_frontend
 
   # Candidate Portal
   candidate-portal:
@@ -31,8 +43,20 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # Limit Node.js memory to prevent excessive usage
+      NODE_OPTIONS: --max-old-space-size=512
+      # Bind Next.js server to all interfaces (required for Docker networking)
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    # Resource limits to prevent 100% CPU usage
+    # Note: Using Docker Compose v3.8 compatible syntax
+    cpus: '1.0'           # Limit to 1 CPU core
+    mem_limit: 1g         # Limit to 1GB RAM
     networks:
-      - tas_network
+      tas_network:
+        aliases:
+          - candidate-portal
+          - tas_candidate_portal
 
   # Nginx Reverse Proxy
   nginx:
@@ -44,12 +68,19 @@ services:
       - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx/nginx.network.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - frontend
       - candidate-portal
     networks:
       - tas_network
+    # Healthcheck to detect when nginx can't reach upstreams
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
   tas_network:

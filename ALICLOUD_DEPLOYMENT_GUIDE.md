@@ -3451,6 +3451,138 @@ docker compose -p tas-production logs --tail=50 backend
 3. Check browser console for exact error
 4. Verify frontend and backend are using the same environment (testing or production)
 
+### CV Upload Failed: Internal Server Error
+
+**Problem:** "Candidate updated, but uploading CV failed: Internal server error" when uploading CV for candidates.
+
+**Root Causes:**
+1. **Permission denied** - Uploads directory not writable by container user
+2. **Directory doesn't exist** - Uploads directory not created on host
+3. **File size exceeds limit** - CV file larger than 10MB (NGINX or backend limit)
+4. **Disk space full** - No space available for file uploads
+
+**Solution:**
+
+1. **Check backend logs for exact error:**
+   ```bash
+   # On backend server
+   docker logs --tail=100 tas_backend | grep -i "upload\|error\|permission\|EACCES"
+   ```
+
+2. **Create uploads directory with proper permissions (CRITICAL FIX):**
+   ```bash
+   cd /opt/tas-production
+   
+   # Stop backend first to avoid permission conflicts
+   docker compose -f docker-compose.network.yml -p tas-production stop backend
+   
+   # Create directories with proper structure
+   mkdir -p backend/uploads/candidates
+   mkdir -p backend/logs
+   
+   # Set permissions to allow container user to write (UID 1001 = nodejs user)
+   # Option 1: Use 777 (most permissive, works for all users)
+   chmod -R 777 backend/uploads backend/logs
+   
+   # Option 2: Set ownership to container user (more secure)
+   # First, check what UID the container user has:
+   docker run --rm node:22-alpine id
+   # Then set ownership (usually 1001:1001 for nodejs user in Alpine)
+   chown -R 1001:1001 backend/uploads backend/logs
+   
+   # Verify permissions
+   ls -la backend/uploads
+   # Should show: drwxrwxrwx or drwxr-xr-x
+   
+   # Restart backend
+   docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production start backend
+   ```
+
+3. **Verify permissions:**
+   ```bash
+   ls -la backend/uploads
+   # Should show drwxrwxrwx or drwxr-xr-x with proper ownership
+   ```
+
+4. **Check file size limits:**
+   ```bash
+   # Check NGINX config (should be 10M or higher)
+   grep client_max_body_size nginx/nginx.network.conf
+   
+   # Check backend MAX_FILE_SIZE env var (default 10MB)
+   docker exec tas_backend printenv MAX_FILE_SIZE
+   ```
+
+5. **Check disk space:**
+   ```bash
+   df -h
+   # Ensure /opt/tas-production has sufficient space
+   ```
+
+6. **Restart backend after fixing permissions:**
+   ```bash
+   docker compose -f docker-compose.network.yml -p tas-production --env-file .env.production restart backend
+   ```
+
+7. **Test upload:**
+   ```bash
+   # Check if directory is writable inside container
+   docker exec tas_backend ls -la /app/uploads
+   docker exec tas_backend touch /app/uploads/test.txt && docker exec tas_backend rm /app/uploads/test.txt
+   ```
+
+**If still failing, check backend logs for specific error:**
+```bash
+docker logs --tail=200 tas_backend | grep -A 10 "UPLOAD\|upload\|document"
+```
+
+### CV Download Redirects to Wrong Website
+
+**Problem:** When clicking to download CV, user is redirected to "project & change request management website" instead of downloading the file.
+
+**Root Cause:** NGINX doesn't have a location block for `/uploads/`, so requests are being proxied to the frontend instead of the backend where static files are served.
+
+**Solution:**
+
+1. **Verify NGINX config has `/uploads/` location block:**
+   ```bash
+   # On frontend server
+   grep -A 10 "location /uploads" nginx/nginx.network.conf
+   ```
+
+2. **If missing, the config should include:**
+   ```nginx
+   location /uploads/ {
+       proxy_pass http://backend;
+       proxy_http_version 1.1;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+       proxy_buffering off;
+       proxy_request_buffering off;
+       proxy_read_timeout 300s;
+       proxy_connect_timeout 75s;
+   }
+   ```
+
+3. **Restart NGINX after updating config:**
+   ```bash
+   # On frontend server
+   cd /opt/tas-production
+   docker compose -f docker-compose.frontend.yml -p tas-production restart nginx
+   
+   # Verify NGINX config is valid
+   docker exec tas_nginx nginx -t
+   ```
+
+4. **Test download:**
+   ```bash
+   # Test from frontend server
+   curl -I http://localhost:8080/uploads/candidates/37df357e-38e7-4e45-a34f-9bb7b20030d3/fa66f7b4-9d36-4f13-b40f-775996d80431.pdf
+   # Should return 200 OK with Content-Type: application/pdf
+   ```
+
 ### Permission Denied Errors (Logs/Uploads)
 
 **Problem:** `EACCES: permission denied, open 'logs/error-2026-01-13.log'`
@@ -3471,8 +3603,8 @@ docker compose -p tas-production logs --tail=50 backend
    # Fix permissions
    chmod -R 777 backend/logs backend/uploads
    
-   # Or set ownership to container user (usually UID 1000)
-   chown -R 1000:1000 backend/logs backend/uploads
+   # Or set ownership to container user (UID 1001 for nodejs user)
+   chown -R 1001:1001 backend/logs backend/uploads
    
    # Restart containers
    docker compose -p tas-production start backend
@@ -3496,6 +3628,211 @@ docker compose -p tas-production logs --tail=50 backend
 - If the backend fails to start, check that all required environment variables are set in `.env.production`
 
 ---
+
+## Container Health and Monitoring
+
+### Why Containers Become Unresponsive
+
+Containers can become unresponsive or crash for several reasons:
+
+#### 1. **Security Compromise** (Most Critical)
+**Symptoms:**
+- Permission errors on suspicious paths (`/etc/lrt`, `/lrt`)
+- Connection attempts to unknown external IPs
+- Unexpected JavaScript errors (`ReferenceError`, `TypeError`)
+- Container appears running but doesn't respond to requests
+
+**Causes:**
+- Malicious code injection
+- Compromised dependencies
+- Unauthorized access to container
+
+**Prevention:**
+- Regularly rebuild containers from trusted source code
+- Monitor container logs for suspicious activity
+- Use `--no-cache` flag when rebuilding to ensure clean builds
+- Keep dependencies updated and scan for vulnerabilities
+
+#### 2. **Memory/Resource Exhaustion**
+**Symptoms:**
+- Container running but not responding
+- Timeout errors
+- Process crashes after extended uptime
+
+**Causes:**
+- Memory leaks in application code
+- Insufficient memory limits
+- File descriptor limits exceeded
+
+**Prevention:**
+- Set memory limits in Docker Compose:
+  ```yaml
+  services:
+    frontend:
+      deploy:
+        resources:
+          limits:
+            memory: 1G
+          reservations:
+            memory: 512M
+  ```
+- Monitor container resource usage: `docker stats`
+- Implement periodic container restarts (e.g., daily via cron)
+
+#### 3. **File System Corruption**
+**Symptoms:**
+- Permission denied errors
+- Missing files or corrupted build artifacts
+- Container can't read/write files
+
+**Causes:**
+- Disk space exhaustion
+- Filesystem errors
+- Corrupted Docker volumes
+
+**Prevention:**
+- Monitor disk space: `df -h`
+- Regularly clean up unused Docker resources: `docker system prune -a`
+- Use health checks to detect issues early
+
+#### 4. **Build Artifacts Corruption**
+**Symptoms:**
+- Container starts but application doesn't work
+- Runtime errors about missing files
+- Build succeeds but runtime fails
+
+**Causes:**
+- Interrupted builds
+- Corrupted `.next` or build directories
+- Incomplete dependency installation
+
+**Prevention:**
+- Always use `--build` flag when code changes
+- Use `--no-cache` periodically to ensure clean builds
+- Verify build artifacts before deployment
+
+### Preventive Maintenance
+
+#### Daily Health Checks
+
+Create a cron job to check container health:
+
+```bash
+# Add to crontab: crontab -e
+# Check container health every hour
+0 * * * * cd /opt/tas-production && docker ps --filter "name=tas-production" --format "{{.Names}}: {{.Status}}" | grep -v "Up" && echo "ALERT: Container down!" | mail -s "Container Alert" admin@example.com
+```
+
+#### Weekly Container Restart (Recommended)
+
+Restart containers weekly to prevent memory leaks and corruption:
+
+```bash
+# Add to crontab: crontab -e
+# Restart containers every Sunday at 3 AM
+0 3 * * 0 cd /opt/tas-production && docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production restart frontend candidate-portal nginx
+```
+
+#### Monthly Full Rebuild
+
+Rebuild containers monthly with `--no-cache` to ensure clean state:
+
+```bash
+# Add to crontab: crontab -e
+# Full rebuild on 1st of each month at 2 AM
+0 2 1 * * cd /opt/tas-production && export $(grep -v '^#' .env.production | xargs) && docker compose -f docker-compose.frontend.yml -p tas-production --env-file .env.production up -d --build --no-cache frontend candidate-portal
+```
+
+### High CPU Usage (100% CPU Spike)
+
+**Problem:** Frontend container spikes to 100% CPU when started, causing server performance issues.
+
+**Root Causes:**
+1. **No resource limits** - Container can use unlimited CPU/memory
+2. **Heavy data loading on startup** - Dashboard paginates through ALL records (positions, applications) on every page load
+3. **Infinite pagination loops** - While loops can run indefinitely if pagination logic fails
+4. **No memory limits** - Node.js can consume all available memory
+
+**Solution Applied:**
+1. **Added CPU/Memory limits** in `docker-compose.frontend.yml`:
+   - CPU limit: 1.0 core maximum
+   - Memory limit: 1GB maximum, 512MB reserved
+   - Node.js memory limit: 512MB via `NODE_OPTIONS=--max-old-space-size=512`
+
+2. **Added pagination safety limits** in dashboard code:
+   - Maximum 50 pages per data fetch (5000 records max)
+   - Prevents infinite loops and excessive CPU usage
+
+**Verify Resource Limits:**
+```bash
+# Check if limits are applied
+docker inspect tas_frontend | grep -A 10 "Resources"
+
+# Monitor CPU/memory usage
+docker stats --no-stream tas_frontend
+```
+
+**If CPU still spikes after applying limits:**
+1. Check if limits are actually applied: `docker inspect tas_frontend | grep Resources`
+2. Check container logs for errors: `docker logs --tail=100 tas_frontend`
+3. Consider reducing the `maxPages` limit in `frontend/src/app/page.tsx` if you have very large datasets
+4. Implement lazy loading or caching for dashboard data
+
+### Monitoring Commands
+
+#### Check Container Health
+```bash
+# Quick status check
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Detailed health check
+docker inspect tas_frontend | grep -A 5 Health
+
+# Resource usage
+docker stats --no-stream tas_frontend tas_backend
+```
+
+#### Check Container Logs for Issues
+```bash
+# Recent errors
+docker logs --tail=100 tas_frontend | grep -i error
+
+# Suspicious activity
+docker logs --tail=1000 tas_frontend | grep -E "(EACCES|ETIMEDOUT|permission|denied)"
+
+# Check for external connections
+docker logs --tail=1000 tas_frontend | grep -E "connect.*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"
+```
+
+#### Test Container Responsiveness
+```bash
+# Test frontend from NGINX container
+docker exec tas_nginx curl -i http://frontend:3000/ --max-time 5
+
+# Test backend from frontend server
+curl -i http://8.215.56.98:4000/health --max-time 5
+```
+
+### When to Rebuild vs Restart
+
+**Rebuild (`--build`) when:**
+- Application code changed
+- Dependencies changed (`package.json`, `requirements.txt`)
+- Dockerfile changed
+- Container becomes unresponsive (after checking logs)
+- Suspicious activity detected in logs
+
+**Restart (no `--build`) when:**
+- Only environment variables changed
+- Configuration files changed (not code)
+- Container is healthy but needs refresh
+- Scheduled maintenance
+
+**Force Rebuild (`--no-cache`) when:**
+- Container keeps failing after normal rebuild
+- Suspected corruption or compromise
+- Monthly maintenance
+- After security incident
 
 ## Maintenance Commands
 
@@ -3956,9 +4293,86 @@ Keep a record of which ports are used by which applications:
    - Update NGINX `server_name` directives
 
 2. **Setup SSL/HTTPS** (required for production):
-   - Use Let's Encrypt with Certbot
-   - Update NGINX configuration for HTTPS
-   - Update `FRONTEND_URL` and `CORS_ORIGIN` to use `https://`
+   
+   **Step 1: Place SSL Certificates**
+   
+   Place your SSL certificate files in the `ssl/` directory on the frontend server:
+   
+   ```bash
+   cd /opt/tas-production
+   
+   # Ensure ssl directory exists
+   mkdir -p ssl
+   
+   # Copy your certificate files (replace with your actual file names)
+   # Required files:
+   # - fullchain.pem (certificate + intermediate chain)
+   # - privkey.pem (private key)
+   cp /path/to/your/fullchain.pem ssl/
+   cp /path/to/your/privkey.pem ssl/
+   
+   # Set correct permissions
+   chmod 644 ssl/fullchain.pem
+   chmod 600 ssl/privkey.pem
+   ```
+   
+   **Step 2: Verify SSL Configuration**
+   
+   The NGINX configuration (`nginx/nginx.network.conf`) is already configured for SSL:
+   - HTTP (port 8080) automatically redirects to HTTPS
+   - HTTPS listens on port 443 (mapped to `HTTPS_PORT` in docker-compose, default: 8443)
+   - SSL certificates are mounted from `./ssl` to `/etc/nginx/ssl` in the container
+   
+   **Step 3: Update Environment Variables**
+   
+   Ensure `HTTPS_PORT` is set in `.env.production`:
+   
+   ```bash
+   # In .env.production
+   HTTPS_PORT=8443  # Or 443 if using standard port
+   ```
+   
+   **Step 4: Update Application URLs**
+   
+   Update `FRONTEND_URL` and `CORS_ORIGIN` in `.env.production` to use `https://`:
+   
+   ```bash
+   # Update these in .env.production
+   FRONTEND_URL=https://tas.energi-up.com:8443
+   CORS_ORIGIN=https://tas.energi-up.com:8443,https://147.139.176.70:8443
+   ```
+   
+   **Step 5: Restart NGINX Container**
+   
+   ```bash
+   cd /opt/tas-production
+   
+   # Test NGINX configuration
+   docker compose -f docker-compose.frontend.yml -p tas-production exec nginx nginx -t
+   
+   # Restart NGINX to load SSL certificates
+   docker compose -f docker-compose.frontend.yml -p tas-production restart nginx
+   
+   # Check logs for SSL errors
+   docker compose -f docker-compose.frontend.yml -p tas-production logs nginx
+   ```
+   
+   **Step 6: Verify SSL is Working**
+   
+   ```bash
+   # Test HTTPS endpoint
+   curl -k https://tas.energi-up.com:8443/health
+   
+   # Check SSL certificate
+   openssl s_client -connect tas.energi-up.com:8443 -servername tas.energi-up.com
+   ```
+   
+   **Troubleshooting SSL Issues:**
+   
+   - **Certificate not found**: Ensure `fullchain.pem` and `privkey.pem` exist in `ssl/` directory
+   - **Permission denied**: Check file permissions (`chmod 644 fullchain.pem`, `chmod 600 privkey.pem`)
+   - **Port not accessible**: Check AliCloud Security Group allows `HTTPS_PORT` (default: 8443)
+   - **Redirect loop**: Verify `HTTPS_PORT` matches the port in the redirect URL in `nginx.network.conf`
 
 3. **Monitoring**:
    - Set up log rotation
