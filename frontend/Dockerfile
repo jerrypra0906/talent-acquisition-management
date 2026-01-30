@@ -33,5 +33,7 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Bind to 0.0.0.0 to allow connections from other Docker containers
+# Next.js standalone server.js uses HOSTNAME env var or defaults to localhost
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 PORT=3000 node server.js"]
 

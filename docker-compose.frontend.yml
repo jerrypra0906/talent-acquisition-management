@@ -19,6 +19,9 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       # Limit Node.js memory to prevent excessive usage
       NODE_OPTIONS: --max-old-space-size=512
+      # Bind Next.js server to all interfaces (required for Docker networking)
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
     # Resource limits to prevent 100% CPU usage
     # Note: Using Docker Compose v3.8 compatible syntax
     cpus: '1.0'           # Limit to 1 CPU core
@@ -42,6 +45,9 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       # Limit Node.js memory to prevent excessive usage
       NODE_OPTIONS: --max-old-space-size=512
+      # Bind Next.js server to all interfaces (required for Docker networking)
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
     # Resource limits to prevent 100% CPU usage
     # Note: Using Docker Compose v3.8 compatible syntax
     cpus: '1.0'           # Limit to 1 CPU core
