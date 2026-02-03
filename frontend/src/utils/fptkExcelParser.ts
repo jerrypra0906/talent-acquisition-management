@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { FPTK, JobType, FPTKStatus, Priority } from '@/types'
 
 export interface FPTKUploadResult {
@@ -240,166 +240,157 @@ function validateAndConvertFPTK(row: FPTKExcelRow, rowNumber: number): { valid: 
 }
 
 export function parseFPTKExcelFile(file: File): Promise<FPTKUploadResult> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    
-    reader.onload = (e) => {
-      try {
-        const data = e.target?.result
-        if (!data) {
-          reject(new Error('Failed to read file'))
-          return
-        }
+  return new Promise(async (resolve, reject) => {
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      
+      // Get the first worksheet
+      const worksheet = workbook.worksheets[0]
+      
+      if (!worksheet) {
+        reject(new Error('No worksheet found in the Excel file'))
+        return
+      }
 
-        // Parse the Excel file
-        const workbook = XLSX.read(data, { type: 'binary' })
-        
-        // Get the first worksheet
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        
-        if (!worksheet) {
-          reject(new Error('No worksheet found in the Excel file'))
-          return
-        }
+      if (worksheet.rowCount < 2) {
+        reject(new Error('Excel file must have at least 2 rows (header and data)'))
+        return
+      }
 
-        // Convert worksheet to JSON with headers
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
-        
-        if (jsonData.length < 2) {
-          reject(new Error('Excel file must have at least 2 rows (header and data)'))
-          return
-        }
-
-        // Get headers (first row) and normalize them for case-insensitive matching
-        const headers = (jsonData[0] as any[]).map((h: any) => h?.toString().trim() || '')
-        
-        // Create a normalized mapping: normalized header -> original header -> field key
-        const headerMapping: Record<string, { original: string; fieldKey: keyof FPTKExcelRow }> = {}
-        headers.forEach((header) => {
-          const normalized = header.toLowerCase().trim()
-          // Try exact match first
-          if (FIELD_MAPPING[header]) {
-            headerMapping[normalized] = { original: header, fieldKey: FIELD_MAPPING[header] }
-          } else {
-            // Try case-insensitive match
-            for (const [key, value] of Object.entries(FIELD_MAPPING)) {
-              if (key.toLowerCase() === normalized) {
-                headerMapping[normalized] = { original: header, fieldKey: value }
-                break
-              }
+      // Get headers (first row)
+      const headerRow = worksheet.getRow(1)
+      const headers: string[] = []
+      headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        headers[colNumber - 1] = cell.value?.toString().trim() || ''
+      })
+      
+      // Create a normalized mapping: normalized header -> original header -> field key
+      const headerMapping: Record<string, { original: string; fieldKey: keyof FPTKExcelRow }> = {}
+      headers.forEach((header) => {
+        const normalized = header.toLowerCase().trim()
+        // Try exact match first
+        if (FIELD_MAPPING[header]) {
+          headerMapping[normalized] = { original: header, fieldKey: FIELD_MAPPING[header] }
+        } else {
+          // Try case-insensitive match
+          for (const [key, value] of Object.entries(FIELD_MAPPING)) {
+            if (key.toLowerCase() === normalized) {
+              headerMapping[normalized] = { original: header, fieldKey: value }
+              break
             }
           }
+        }
+      })
+      
+      // Process data rows
+      const success: FPTK[] = []
+      const failed: Array<{ row: number; data: any; errors: string[] }> = []
+
+      // Helper function to convert Excel date to string
+      const excelDateToString = (value: number): string => {
+        const excelEpoch = new Date(1899, 11, 30) // Excel epoch is 1899-12-30
+        const date = new Date(excelEpoch.getTime() + value * 86400000)
+        return date.toISOString().split('T')[0] // YYYY-MM-DD format
+      }
+
+      // Helper function to convert Excel date to month-year format
+      const excelDateToMonthYear = (value: number): string => {
+        const excelEpoch = new Date(1899, 11, 30)
+        const date = new Date(excelEpoch.getTime() + value * 86400000)
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                          'July', 'August', 'September', 'October', 'November', 'December']
+        const month = monthNames[date.getMonth()] || 'Unknown'
+        const year = String(date.getFullYear()).slice(-2) // Last 2 digits of year
+        return `${month}-${year}`
+      }
+
+      for (let i = 2; i <= worksheet.rowCount; i++) {
+        const row = worksheet.getRow(i)
+        const rowValues: any[] = []
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          rowValues[colNumber - 1] = cell.value
         })
         
-        // Process data rows
-        const success: FPTK[] = []
-        const failed: Array<{ row: number; data: any; errors: string[] }> = []
+        // Skip empty rows
+        if (rowValues.every(cell => !cell || cell.toString().trim() === '')) {
+          continue
+        }
 
-        for (let i = 1; i < jsonData.length; i++) {
-          const row = jsonData[i] as any[]
-          
-          // Skip empty rows
-          if (!row || row.every(cell => !cell || cell.toString().trim() === '')) {
-            continue
-          }
-
-          // Map row data to FPTKExcelRow using normalized header mapping
-          const rowData: FPTKExcelRow = {}
-          headers.forEach((header, index) => {
-            const normalized = header.toLowerCase().trim()
-            const mapping = headerMapping[normalized]
-            if (mapping && row[index] !== undefined && row[index] !== null && row[index] !== '') {
-              let value = row[index]
-              
-              // Handle priorityByMonthYear - if it's a number (Excel date serial), convert to text format
-              if (mapping.fieldKey === 'priorityByMonthYear' && typeof value === 'number') {
-                try {
-                  // Excel date serial number to date
-                  const excelDate = XLSX.SSF.parse_date_code(value)
-                  if (excelDate) {
-                    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                                      'July', 'August', 'September', 'October', 'November', 'December']
-                    const month = monthNames[excelDate.m - 1] || 'Unknown'
-                    const year = String(excelDate.y).slice(-2) // Last 2 digits of year
-                    value = `${month}-${year}`
-                  } else {
-                    // If parsing fails, just convert to string
-                    value = value.toString()
-                  }
-                } catch (e) {
-                  // If conversion fails, just use the number as string
-                  value = value.toString()
-                }
+        // Map row data to FPTKExcelRow using normalized header mapping
+        const rowData: FPTKExcelRow = {}
+        headers.forEach((header, index) => {
+          const normalized = header.toLowerCase().trim()
+          const mapping = headerMapping[normalized]
+          if (mapping && rowValues[index] !== undefined && rowValues[index] !== null && rowValues[index] !== '') {
+            let value = rowValues[index]
+            
+            // Handle priorityByMonthYear - if it's a number (Excel date serial), convert to text format
+            if (mapping.fieldKey === 'priorityByMonthYear' && typeof value === 'number') {
+              try {
+                value = excelDateToMonthYear(value)
+              } catch (e) {
+                // If conversion fails, just use the number as string
+                value = value.toString()
               }
-              
-              // Handle requestDate - if it's a number (Excel date serial), convert to ISO string
-              // If empty, set to today's date
-              if (mapping.fieldKey === 'requestDate') {
-                if (typeof value === 'number') {
-                  try {
-                    const excelDate = XLSX.SSF.parse_date_code(value)
-                    if (excelDate) {
-                      const date = new Date(excelDate.y, excelDate.m - 1, excelDate.d)
-                      value = date.toISOString().split('T')[0] // YYYY-MM-DD format
-                    } else {
-                      // If parsing fails, use today's date
-                      value = new Date().toISOString().split('T')[0]
-                    }
-                  } catch (e) {
-                    // If conversion fails, use today's date
-                    value = new Date().toISOString().split('T')[0]
-                  }
-                } else if (!value || value.toString().trim() === '') {
-                  // If empty, set to today's date
+            }
+            
+            // Handle requestDate - if it's a number (Excel date serial), convert to ISO string
+            // If empty, set to today's date
+            if (mapping.fieldKey === 'requestDate') {
+              if (typeof value === 'number') {
+                try {
+                  value = excelDateToString(value)
+                } catch (e) {
+                  // If conversion fails, use today's date
                   value = new Date().toISOString().split('T')[0]
                 }
+              } else if (value instanceof Date) {
+                value = value.toISOString().split('T')[0]
+              } else if (!value || value.toString().trim() === '') {
+                // If empty, set to today's date
+                value = new Date().toISOString().split('T')[0]
               }
-              
-              rowData[mapping.fieldKey] = value
             }
-          })
-
-          // Validate and convert
-          const validationResult = validateAndConvertFPTK(rowData, i + 1)
-          
-          if (validationResult.valid && validationResult.fptk) {
-            // Store row number in the FPTK object for error tracking
-            const fptkWithRow = {
-              ...validationResult.fptk,
-              _rowNumber: i + 1,
-            }
-            success.push(fptkWithRow as any)
-          } else {
-            failed.push({
-              row: i + 1,
-              data: rowData,
-              errors: validationResult.errors
-            })
+            
+            rowData[mapping.fieldKey] = value
           }
-        }
-
-        resolve({
-          success,
-          failed,
-          total: success.length + failed.length,
-          successCount: success.length,
-          failedCount: failed.length
         })
-      } catch (error) {
-        reject(new Error(`Failed to parse Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`))
+
+        // Validate and convert
+        const validationResult = validateAndConvertFPTK(rowData, i)
+        
+        if (validationResult.valid && validationResult.fptk) {
+          // Store row number in the FPTK object for error tracking
+          const fptkWithRow = {
+            ...validationResult.fptk,
+            _rowNumber: i,
+          }
+          success.push(fptkWithRow as any)
+        } else {
+          failed.push({
+            row: i,
+            data: rowData,
+            errors: validationResult.errors
+          })
+        }
       }
-    }
 
-    reader.onerror = () => {
-      reject(new Error('Failed to read the file'))
+      resolve({
+        success,
+        failed,
+        total: success.length + failed.length,
+        successCount: success.length,
+        failedCount: failed.length
+      })
+    } catch (error) {
+      reject(new Error(`Failed to parse Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`))
     }
-
-    reader.readAsBinaryString(file)
   })
 }
 
-export function generateFPTKTemplate(): void {
+export async function generateFPTKTemplate(): Promise<void> {
   const headers = [
     'PT',
     'No FKTK',
@@ -450,14 +441,36 @@ export function generateFPTKTemplate(): void {
     '2024-01-15'
   ]
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, exampleRow])
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'FPTK Template')
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('FPTK Template')
+
+  // Add headers
+  worksheet.addRow(headers)
+  
+  // Add example row
+  worksheet.addRow(exampleRow)
 
   // Set column widths
-  const colWidths = headers.map(() => ({ wch: 25 }))
-  worksheet['!cols'] = colWidths
+  worksheet.columns = headers.map(() => ({ width: 25 }))
+
+  // Style header row
+  const headerRow = worksheet.getRow(1)
+  headerRow.font = { bold: true }
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE0E0E0' }
+  }
 
   // Generate file and download
-  XLSX.writeFile(workbook, 'FPTK_Template.xlsx')
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'FPTK_Template.xlsx'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
 }

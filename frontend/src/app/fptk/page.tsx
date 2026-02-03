@@ -770,8 +770,8 @@ export default function FPTKPage() {
     }
   }
 
-  const handleDownloadTemplate = () => {
-    generateFPTKTemplate()
+  const handleDownloadTemplate = async () => {
+    await generateFPTKTemplate()
   }
 
   if (isLoading) {
