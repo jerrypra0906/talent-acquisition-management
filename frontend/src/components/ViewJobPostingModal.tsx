@@ -76,20 +76,97 @@ export default function ViewJobPostingModal({ isOpen, onClose, jobPosting, onSta
 
   // Load applied candidates when job posting changes
   useEffect(() => {
-    if (jobPosting && Array.isArray((jobPosting as any).appliedCandidates)) {
-      const normalized = (jobPosting as any).appliedCandidates.map((candidate: any) => ({
-        ...candidate,
-        status: candidate.status || mapAppliedStatusLabel(candidate.backendStatus),
-        backendStatus: candidate.backendStatus || candidate.status,
-        skills: candidate.skills || [],
-        interviews: candidate.interviews || [], // Preserve interview data
-        rejectedDate: candidate.rejectedDate || candidate.rejectedAt || null,
-        withdrawDate: candidate.withdrawDate || candidate.withdrawnAt || null,
-      }))
-      setAppliedCandidates(normalized)
-    } else {
-      setAppliedCandidates([])
+    const loadAppliedCandidates = async () => {
+      if (!jobPosting) {
+        setAppliedCandidates([])
+        return
+      }
+
+      // First, use applications from the FPTK (proper Application records)
+      let candidates: any[] = []
+      
+      if (Array.isArray((jobPosting as any).appliedCandidates)) {
+        candidates = (jobPosting as any).appliedCandidates.map((candidate: any) => ({
+          ...candidate,
+          status: candidate.status || mapAppliedStatusLabel(candidate.backendStatus),
+          backendStatus: candidate.backendStatus || candidate.status,
+          skills: candidate.skills || [],
+          interviews: candidate.interviews || [],
+          rejectedDate: candidate.rejectedDate || candidate.rejectedAt || null,
+          withdrawDate: candidate.withdrawDate || candidate.withdrawnAt || null,
+        }))
+      }
+
+      // If no applications found, try to find candidates by positionAppliedFor (legacy fallback)
+      if (candidates.length === 0 && jobPosting.title) {
+        try {
+          const response = await CandidatesAPI.getAll({}, { page: 1, limit: 1000 })
+          const allCandidates = response.data || []
+          
+          // Find candidates who have this position in their positionAppliedFor
+          const matchingCandidates = allCandidates.filter((candidate: any) => {
+            const positionAppliedFor = candidate.positionAppliedFor || []
+            const positionArray = Array.isArray(positionAppliedFor) 
+              ? positionAppliedFor 
+              : (positionAppliedFor ? [positionAppliedFor] : [])
+            
+            // Check if position title matches (case-insensitive, trim whitespace)
+            const positionTitle = (jobPosting.title || '').trim()
+            return positionArray.some((pos: string) => 
+              (pos || '').trim().toLowerCase() === positionTitle.toLowerCase()
+            )
+          })
+
+          // Map to applied candidates format
+          candidates = matchingCandidates.map((candidate: any) => {
+            const user = candidate.user || {}
+            const formDataDiri = typeof candidate.formDataDiri === 'string' 
+              ? JSON.parse(candidate.formDataDiri || '{}') 
+              : (candidate.formDataDiri || {})
+            const languagesData = typeof candidate.languages === 'string'
+              ? JSON.parse(candidate.languages || '{}')
+              : (candidate.languages || {})
+
+            const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+              formDataDiri?.fullName || candidate.fullName || candidate.name ||
+              `Candidate ${candidate.id?.slice(0, 6) || ''}`
+
+            const email = user.email || candidate.email || formDataDiri?.email || ''
+            const skills = Array.isArray(candidate.skills)
+              ? candidate.skills
+              : Array.isArray(languagesData?.skills)
+                ? languagesData.skills
+                : []
+
+            return {
+              id: candidate.id,
+              candidateId: candidate.id,
+              fullName,
+              name: fullName,
+              email,
+              phone: user.phoneNumber || '',
+              status: 'Applied',
+              backendStatus: 'SUBMITTED',
+              appliedDate: candidate.createdAt || new Date().toISOString(),
+              rejectedDate: null,
+              withdrawDate: null,
+              source: 'Manual',
+              skills,
+              experience: languagesData?.yearsOfExperience || 0,
+              yearsOfExperience: languagesData?.yearsOfExperience || 0,
+              division: user.division || candidate.division || null,
+              interviews: [],
+            }
+          })
+        } catch (error) {
+          console.error('Error loading candidates by positionAppliedFor:', error)
+        }
+      }
+
+      setAppliedCandidates(candidates)
     }
+
+    loadAppliedCandidates()
   }, [jobPosting])
 
   if (!isOpen || !jobPosting) return null
