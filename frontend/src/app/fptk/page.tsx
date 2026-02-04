@@ -426,9 +426,19 @@ export default function FPTKPage() {
     }
   }
 
-  const handleViewJobPosting = (jobPosting: FPTK) => {
-    setSelectedJobPosting(jobPosting)
-    setIsViewModalOpen(true)
+  const handleViewJobPosting = async (jobPosting: FPTK) => {
+    try {
+      // Fetch full FPTK details including applications
+      const fullFptkData = await FPTKAPI.getById(jobPosting.id)
+      const mappedFptk = mapApiFptk(fullFptkData)
+      setSelectedJobPosting(mappedFptk)
+      setIsViewModalOpen(true)
+    } catch (error) {
+      console.error('Error loading FPTK details:', error)
+      // Fallback to using the jobPosting from list if fetch fails
+      setSelectedJobPosting(jobPosting)
+      setIsViewModalOpen(true)
+    }
   }
 
   const handleEditJobPosting = (jobPosting: FPTK) => {
