@@ -125,15 +125,19 @@ export default function SummaryByPositionPage() {
           }
         })
 
-        // SLA bucket based on FPTK Receive Date
-        const receiveDate = job.fptkReceiveDate ? new Date(job.fptkReceiveDate) : null
+        // SLA bucket based on FPTK Receive Date (fallback to requestDate if receiveDate not available)
+        // Use same logic as dashboard: fptkReceiveDate || requestDate
+        const referenceDate = job.fptkReceiveDate || job.fptkReceiveDate || job.requestDate || job.createdAt
         let slaBucket = '-'
-        if (receiveDate && !isNaN(receiveDate.getTime())) {
-          const diffDays = Math.floor((new Date().getTime() - receiveDate.getTime()) / (1000 * 60 * 60 * 24))
-          if (diffDays <= 30) slaBucket = '0-30 Days'
-          else if (diffDays <= 60) slaBucket = '31-60 Days'
-          else if (diffDays <= 90) slaBucket = '61-90 Days'
-          else slaBucket = 'Above 91 Days'
+        if (referenceDate) {
+          const dateObj = new Date(referenceDate)
+          if (!isNaN(dateObj.getTime())) {
+            const diffDays = Math.floor((new Date().getTime() - dateObj.getTime()) / (1000 * 60 * 60 * 24))
+            if (diffDays <= 30) slaBucket = '0-30 Days'
+            else if (diffDays <= 60) slaBucket = '31-60 Days'
+            else if (diffDays <= 90) slaBucket = '61-90 Days'
+            else slaBucket = 'Above 91 Days'
+          }
         }
 
         return {
