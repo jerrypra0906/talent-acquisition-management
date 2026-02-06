@@ -289,6 +289,8 @@ export default function Dashboard() {
     totalCandidates: 0,
     activeApplications: 0,
     openPositions: 0,
+    closedPositions: 0,
+    holdPositions: 0,
     interviewsThisWeek: 0,
     hiredThisMonth: 0,
     pendingOffers: 0,
@@ -314,8 +316,45 @@ const filteredPositions = useMemo(
 const openPositionItems = useMemo(() => {
   return filteredPositions
     .filter((position) => {
-      const status = (position?.currentStatus || position?.status || '').toLowerCase()
-      return status !== 'on boarding' && status !== 'cancelled'
+      const status = (position?.currentStatus || position?.status || '').trim().toLowerCase()
+      return (
+        status !== 'cancel' &&
+        status !== 'hold' &&
+        status !== 'signing' &&
+        status !== 'on boarding' &&
+        status !== 'boarding'
+      )
+    })
+    .map((position) => ({
+      title: position?.title || position?.position || 'Unknown Position',
+      subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
+      meta: position?.currentStatus || position?.status || 'N/A',
+    }))
+}, [filteredPositions])
+
+const closedPositionItems = useMemo(() => {
+  return filteredPositions
+    .filter((position) => {
+      const status = (position?.currentStatus || position?.status || '').trim().toLowerCase()
+      return (
+        status === 'cancel' ||
+        status === 'signing' ||
+        status === 'on boarding' ||
+        status === 'boarding'
+      )
+    })
+    .map((position) => ({
+      title: position?.title || position?.position || 'Unknown Position',
+      subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
+      meta: position?.currentStatus || position?.status || 'N/A',
+    }))
+}, [filteredPositions])
+
+const holdPositionItems = useMemo(() => {
+  return filteredPositions
+    .filter((position) => {
+      const status = (position?.currentStatus || position?.status || '').trim().toLowerCase()
+      return status === 'hold'
     })
     .map((position) => ({
       title: position?.title || position?.position || 'Unknown Position',
@@ -349,6 +388,20 @@ const pendingOfferItems = useMemo(
       value: dashboardStats.openPositions.toString(),
       icon: BriefcaseIcon,
       change: '+3%',
+      changeType: 'positive',
+    },
+    {
+      name: 'Closed Positions',
+      value: dashboardStats.closedPositions.toString(),
+      icon: BriefcaseIcon,
+      change: '+0%',
+      changeType: 'positive',
+    },
+    {
+      name: 'Hold Positions',
+      value: dashboardStats.holdPositions.toString(),
+      icon: BriefcaseIcon,
+      change: '+0%',
       changeType: 'positive',
     },
     {
@@ -398,7 +451,9 @@ useEffect(() => {
   setDashboardStats({
     totalCandidates: baseStats.totalCandidates ?? 0,
     activeApplications: baseStats.activeApplications ?? 0,
-    openPositions: openPositionItems.length,
+    openPositions: baseStats.openPositions ?? openPositionItems.length,
+    closedPositions: baseStats.closedPositions ?? closedPositionItems.length,
+    holdPositions: baseStats.holdPositions ?? holdPositionItems.length,
     interviewsThisWeek: interviewsCount,
     hiredThisMonth: hiredCount,
     pendingOffers: pendingCount,
@@ -411,6 +466,8 @@ useEffect(() => {
   baseStats,
   filteredPositions,
   openPositionItems.length,
+  closedPositionItems.length,
+  holdPositionItems.length,
   interviewsThisWeekItems.length,
   hiredThisMonthItems.length,
   pendingOfferItems.length,
@@ -539,11 +596,18 @@ useEffect(() => {
         totalCandidates: stats.totalCandidates || 0,
         activeApplications: stats.activeApplications || 0,
         recentActivity: stats.recentActivity || [],
+        openPositions: stats.openPositions || 0,
+        closedPositions: stats.closedPositions ?? 0,
+        holdPositions: stats.holdPositions ?? 0,
       }
+
+      console.log('Dashboard base stats:', base)
+      console.log('API closedPositions:', stats.closedPositions)
+      console.log('API holdPositions:', stats.holdPositions)
 
       setBaseStats({
         ...base,
-        openPositions: openPositionsComputed || stats.activeFPTKs || stats.totalFPTKs || 0,
+        openPositions: openPositionsComputed || stats.openPositions || stats.activeFPTKs || stats.totalFPTKs || 0,
       })
       setAllPositions(positions)
     } catch (error: any) {
@@ -682,6 +746,10 @@ useEffect(() => {
                     }))
                   } else if (item.name === 'Open Positions') {
                     items = openPositionItems
+                  } else if (item.name === 'Closed Positions') {
+                    items = closedPositionItems
+                  } else if (item.name === 'Hold Positions') {
+                    items = holdPositionItems
                   } else if (item.name === 'Interviews This Week') {
                     items = interviewDetailItems.length ? interviewDetailItems : interviewsThisWeekItems
                   } else if (item.name === 'Hired This Month') {
