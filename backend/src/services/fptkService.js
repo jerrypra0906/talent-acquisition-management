@@ -12,6 +12,8 @@ const UI_STATUS_TO_APP_STATUS_MAP = {
   'interviewed': 'INTERVIEW_COMPLETED',
   'interview completed': 'INTERVIEW_COMPLETED',
   'assessment': 'TECHNICAL_TEST',
+  'offering creation': 'OFFER_PROPOSED',
+  'pending feedback': 'OFFER_APPROVED',
   'document verification': 'DOCUMENT_VERIFICATION',
   'offer proposed': 'OFFER_PROPOSED',
   'offer approved': 'OFFER_APPROVED',
@@ -793,6 +795,99 @@ async function getAllFPTKs(filters, pagination, user = null) {
   };
 }
 
+async function getSummaryByPosition(user = null) {
+  // Role-based filtering (same intent as getAllFPTKs / dashboard)
+  const fptkWhere = {};
+  const applicationWhere = {};
+
+  if (user) {
+    const userRole = user.role;
+    const userFirstName = user.firstName;
+    const userDivision = user.division;
+    const userPt = user.pt;
+    const userArea = user.area;
+    const userAreaDetail = user.areaDetail;
+
+    if ((userRole === 'HIRING_MANAGER' || userRole === 'HIRING_MANAGER') && userFirstName) {
+      fptkWhere.hiringManager = userFirstName;
+      applicationWhere.fptk = { hiringManager: userFirstName };
+    } else if ((userRole === 'Head of Division' || userRole === 'DEPARTMENT_HEAD') && userDivision) {
+      fptkWhere.division = userDivision;
+      applicationWhere.fptk = { division: userDivision };
+    } else if (userRole === 'HRBP') {
+      if (userPt && userArea && userAreaDetail) {
+        fptkWhere.pt = userPt;
+        fptkWhere.area = userArea;
+        fptkWhere.areaDetail = userAreaDetail;
+        applicationWhere.fptk = { pt: userPt, area: userArea, areaDetail: userAreaDetail };
+      } else {
+        fptkWhere.id = '00000000-0000-0000-0000-000000000000';
+        applicationWhere.id = '00000000-0000-0000-0000-000000000000';
+      }
+    }
+  }
+
+  const fptks = await prisma.fPTK.findMany({
+    where: fptkWhere,
+    select: {
+      id: true,
+      priority: true,
+      department: true,
+      division: true,
+      section: true,
+      positionTitle: true,
+      position: true,
+      statusFktk: true,
+      remark: true,
+      location: true,
+      area: true,
+      areaDetail: true,
+      requestDate: true,
+      fptkReceiveDate: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const grouped = await prisma.application.groupBy({
+    by: ['fptkId', 'status'],
+    where: Object.keys(applicationWhere).length > 0 ? applicationWhere : undefined,
+    _count: { _all: true },
+  });
+
+  const countsByFptkId = {};
+  const allStatuses = new Set();
+  grouped.forEach((g) => {
+    if (!g.fptkId) return;
+    const status = (g.status || '').toString();
+    allStatuses.add(status);
+    if (!countsByFptkId[g.fptkId]) countsByFptkId[g.fptkId] = {};
+    countsByFptkId[g.fptkId][status] = g._count?._all || 0;
+  });
+
+  // Provide unique filter options quickly
+  const priorities = new Set();
+  const divisions = new Set();
+  const locations = new Set();
+  fptks.forEach((f) => {
+    const p = (f.priority || '').toString().trim();
+    if (p) priorities.add(p);
+    const d = (f.department || f.division || '').toString().trim();
+    if (d) divisions.add(d);
+    const l = (f.areaDetail || f.area || f.location || '').toString().trim();
+    if (l) locations.add(l);
+  });
+
+  return {
+    fptks,
+    applicationCounts: countsByFptkId,
+    statuses: Array.from(allStatuses),
+    priorities: Array.from(priorities),
+    divisions: Array.from(divisions),
+    locations: Array.from(locations),
+  };
+}
+
 /**
  * Update FPTK
  */
@@ -1171,6 +1266,7 @@ module.exports = {
   createFPTK,
   getFPTKById,
   getAllFPTKs,
+  getSummaryByPosition,
   updateFPTK,
   publishFPTK,
   unpublishFPTK,

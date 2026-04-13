@@ -52,8 +52,8 @@ export default function ViewJobPostingModal({ isOpen, onClose, jobPosting, onSta
       INTERVIEW_SCHEDULED: 'Interview Scheduled',
       INTERVIEW_COMPLETED: 'Interviewed',
       DOCUMENT_VERIFICATION: 'Document Verification',
-      OFFER_PROPOSED: 'Offer Proposed',
-      OFFER_APPROVED: 'Offer Approved',
+      OFFER_PROPOSED: 'Offering Creation',
+      OFFER_APPROVED: 'Pending Feedback',
       OFFER_SENT: 'Offer Sent',
       OFFER_ACCEPTED: 'Offer Accepted',
       OFFER_REJECTED: 'Offer Rejected',
@@ -851,7 +851,7 @@ export default function ViewJobPostingModal({ isOpen, onClose, jobPosting, onSta
                           }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? '8px' : '0' }}>
                               <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>
-                                Interview Details {statusLabel === 'Interviewed' || ['Assessment', 'Offer Approved', 'Offer Sent', 'Offer Accepted', 'Offer Rejected', 'Medical Checkup Scheduled', 'MCU', 'Contract Sent', 'Contract Signed', 'On Boarding', 'Hired'].includes(statusLabel) ? '(Interview Results)' : ''}
+                                Interview Details {statusLabel === 'Interviewed' || ['Assessment', 'Offering Creation', 'Pending Feedback', 'Offer Sent', 'Offer Accepted', 'Offer Rejected', 'Medical Checkup Scheduled', 'MCU', 'Contract Sent', 'Contract Signed', 'On Boarding', 'Hired'].includes(statusLabel) ? '(Interview Results)' : ''}
                               </div>
                               <button
                                 type="button"

@@ -256,6 +256,10 @@ export const FPTKAPI = {
     const res = await api.get('/fptk', { params: { ...filters, ...pagination } })
     return res.data
   },
+  async getSummaryByPosition() {
+    const res = await api.get('/fptk/summary-by-position')
+    return res.data.data
+  },
   async getById(id: string) {
     const res = await api.get(`/fptk/${id}`)
     return res.data.data

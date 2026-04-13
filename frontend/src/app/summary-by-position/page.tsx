@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout/Layout'
-import { FPTKAPI, ApplicationsAPI } from '@/lib/api'
+import { FPTKAPI } from '@/lib/api'
 import MultiSelectDropdown from '@/components/MultiSelectDropdown'
 import { getSlaBucketIndonesiaWorkingDays } from '@/utils/indoBusinessDays'
 
@@ -29,11 +29,12 @@ const DEFAULT_STATUSES: string[] = [
   'Interview Scheduled',
   'Interviewed',
   'Assessment',
+  'Offering Creation',
+  'Pending Feedback',
   'Offer Accepted',
   'MCU',
   'On Boarding',
   'Offer Rejected',
-  'Offer Accepted',
   'Rejected (Failed Interview / Assessment)',
   'Withdrawn'
 ]
@@ -48,6 +49,28 @@ export default function SummaryByPositionPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [divisions, setDivisions] = useState<string[]>([])
   const [locations, setLocations] = useState<string[]>([])
+  const topScrollRef = useRef<HTMLDivElement | null>(null)
+  const bottomScrollRef = useRef<HTMLDivElement | null>(null)
+  const tableRef = useRef<HTMLTableElement | null>(null)
+  const [topScrollWidth, setTopScrollWidth] = useState(0)
+
+  useEffect(() => {
+    const update = () => {
+      const w = tableRef.current?.scrollWidth || 0
+      setTopScrollWidth(w)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [rows, allStatuses, sortKey, sortDir])
+
+  const syncScroll = (src: 'top' | 'bottom') => {
+    const top = topScrollRef.current
+    const bottom = bottomScrollRef.current
+    if (!top || !bottom) return
+    if (src === 'top') bottom.scrollLeft = top.scrollLeft
+    else top.scrollLeft = bottom.scrollLeft
+  }
 
   useEffect(() => {
     loadSummaryData()
@@ -63,8 +86,8 @@ export default function SummaryByPositionPage() {
       'INTERVIEW_SCHEDULED': 'Interview Scheduled',
       'INTERVIEW_COMPLETED': 'Interviewed',
       'DOCUMENT_VERIFICATION': 'Under Review',
-      'OFFER_PROPOSED': 'Under Review',
-      'OFFER_APPROVED': 'Under Review',
+      'OFFER_PROPOSED': 'Offering Creation',
+      'OFFER_APPROVED': 'Pending Feedback',
       'OFFER_SENT': 'Under Review',
       'OFFER_ACCEPTED': 'Offer Accepted',
       'OFFER_REJECTED': 'Offer Rejected',
@@ -82,54 +105,22 @@ export default function SummaryByPositionPage() {
 
   const loadSummaryData = async () => {
     try {
-      // Load job postings from API (max limit is 100, so we'll fetch in batches if needed)
-      let allJobPostings: any[] = []
-      let page = 1
-      const limit = 100
-      let hasMore = true
-      
-      while (hasMore) {
-        const response = await FPTKAPI.getAll({}, { page, limit })
-        const jobPostings = response.data || []
-        allJobPostings = [...allJobPostings, ...jobPostings]
-        
-        // Check if there are more pages
-        const totalPages = response.pagination?.totalPages || 1
-        hasMore = page < totalPages
-        page++
-      }
-      
-      // Load all applications to get candidate counts per FPTK (max limit is 100)
-      let allApplications: any[] = []
-      page = 1
-      hasMore = true
-      
-      while (hasMore) {
-        const applicationsResponse = await ApplicationsAPI.getAll({}, { page, limit })
-        const applications = applicationsResponse.data || []
-        allApplications = [...allApplications, ...applications]
-        
-        // Check if there are more pages
-        const totalPages = applicationsResponse.pagination?.totalPages || 1
-        hasMore = page < totalPages
-        page++
-      }
+      const payload = await FPTKAPI.getSummaryByPosition()
+      const allJobPostings: any[] = payload?.fptks || []
+      const applicationCounts: Record<string, Record<string, number>> = payload?.applicationCounts || {}
 
       const collectedStatuses = new Set<string>(DEFAULT_STATUSES)
 
       const result: SummaryRow[] = allJobPostings.map((job: any) => {
-        // Get applications for this FPTK
-        const applications = allApplications.filter((app: any) => app.fptkId === job.id)
-        
-        // Build status counts from applications
+        // Build status counts from pre-aggregated backend counts
         const counts: StatusCounts = {}
         DEFAULT_STATUSES.forEach(s => { counts[s] = 0 })
 
-        // Count applications by their UI status
-        applications.forEach((app: any) => {
-          const uiStatus = mapApplicationStatusToUi(app.status)
-          if (uiStatus && DEFAULT_STATUSES.includes(uiStatus)) {
-            counts[uiStatus] = (counts[uiStatus] || 0) + 1
+        const rawCounts = applicationCounts[job.id] || {}
+        Object.entries(rawCounts).forEach(([backendStatus, c]) => {
+          const uiStatus = mapApplicationStatusToUi((backendStatus || '').toString().toUpperCase())
+          if (uiStatus) {
+            counts[uiStatus] = (counts[uiStatus] || 0) + (Number(c) || 0)
             collectedStatuses.add(uiStatus)
           }
         })
@@ -158,10 +149,16 @@ export default function SummaryByPositionPage() {
         }
       })
 
-      setAllStatuses([...DEFAULT_STATUSES])
+      setAllStatuses(Array.from(collectedStatuses))
       setRows(result)
-      setDivisions(Array.from(new Set(result.map((r) => r.division))).filter(Boolean).sort())
-      setLocations(Array.from(new Set(result.map((r) => r.location))).filter(Boolean).sort())
+      const divOpts = Array.isArray(payload?.divisions) && payload.divisions.length
+        ? payload.divisions
+        : Array.from(new Set(result.map((r) => r.division))).filter(Boolean)
+      const locOpts = Array.isArray(payload?.locations) && payload.locations.length
+        ? payload.locations
+        : Array.from(new Set(result.map((r) => r.location))).filter(Boolean)
+      setDivisions(divOpts.filter(Boolean).sort())
+      setLocations(locOpts.filter(Boolean).sort())
     } catch (error: any) {
       console.error('Error loading summary data:', error)
       alert('Failed to load summary data. Please try again.')
@@ -301,8 +298,22 @@ export default function SummaryByPositionPage() {
         </div>
 
         <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="px-4 py-5 sm:p-6 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+          {/* Top horizontal scrollbar */}
+          <div
+            ref={topScrollRef}
+            onScroll={() => syncScroll('top')}
+            className="px-4 pt-4 sm:px-6 overflow-x-auto"
+          >
+            <div style={{ width: topScrollWidth || 0, height: 1 }} />
+          </div>
+
+          {/* Table container (bottom scrollbar) */}
+          <div
+            ref={bottomScrollRef}
+            onScroll={() => syncScroll('bottom')}
+            className="px-4 py-5 sm:p-6 overflow-x-auto"
+          >
+            <table ref={tableRef} className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th onClick={() => handleSort('priority')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority {sortIndicator('priority')}</th>
