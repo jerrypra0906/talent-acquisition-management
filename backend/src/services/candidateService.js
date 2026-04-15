@@ -852,6 +852,7 @@ async function addReference(candidateId, referenceData) {
 async function searchCandidates(filters, pagination, user = null) {
   const { page = 1, limit = 20 } = pagination;
   const skip = (page - 1) * limit;
+  const sortByName = (filters.sortBy || '').toString().toLowerCase() === 'name';
 
   const where = {};
 
@@ -945,6 +946,10 @@ async function searchCandidates(filters, pagination, user = null) {
     }
   }
 
+  const orderBy = sortByName
+    ? [{ user: { firstName: 'asc' } }, { user: { lastName: 'asc' } }]
+    : { createdAt: 'desc' };
+
   const [candidates, total] = await Promise.all([
     prisma.candidate.findMany({
       where,
@@ -970,7 +975,7 @@ async function searchCandidates(filters, pagination, user = null) {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy,
     }),
     prisma.candidate.count({ where }),
   ]);

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -23,6 +23,8 @@ export default function MasterDivisionPage() {
   const [divisions, setDivisions] = useState<Division[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<10 | 50 | 100>(50)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
@@ -100,7 +102,17 @@ export default function MasterDivisionPage() {
     return () => clearTimeout(timer)
   }, [searchTerm])
 
+  useEffect(() => {
+    setPage(1)
+  }, [searchTerm, pageSize])
+
   const filteredDivisions = divisions
+  const totalPages = Math.max(1, Math.ceil(filteredDivisions.length / pageSize))
+  const pagedDivisions = useMemo(() => {
+    const safePage = Math.min(page, totalPages)
+    const start = (safePage - 1) * pageSize
+    return filteredDivisions.slice(start, start + pageSize)
+  }, [filteredDivisions, page, pageSize, totalPages])
 
   if (isLoading) {
     return (
@@ -155,6 +167,18 @@ export default function MasterDivisionPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 whitespace-nowrap">Per page</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value) as 10 | 50 | 100)}
+              className="px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value={10}>10</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
           <div className="flex items-center gap-2 sm:ml-auto">
             <button
               disabled={!canCreate}
@@ -196,7 +220,7 @@ export default function MasterDivisionPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredDivisions.map((division) => (
+                  {pagedDivisions.map((division) => (
                     <tr key={division.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {division.divisionName}
@@ -239,6 +263,34 @@ export default function MasterDivisionPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-gray-600">
+          <span>
+            Showing {filteredDivisions.length === 0 ? 0 : (page - 1) * pageSize + 1}–
+            {Math.min(page * pageSize, filteredDivisions.length)} of {filteredDivisions.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="tabular-nums">
+              Page {Math.min(page, totalPages)} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
         </div>
 

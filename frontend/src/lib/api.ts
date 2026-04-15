@@ -252,9 +252,18 @@ export const MasterOfficeLocationAPI = {
 
 // FPTK APIs
 export const FPTKAPI = {
-  async getAll(filters?: { status?: string; department?: string; search?: string }, pagination?: { page?: number; limit?: number }) {
+  async getAll(
+    filters?: { status?: string; department?: string; search?: string; currentStatus?: string },
+    pagination?: { page?: number; limit?: number }
+  ) {
     const res = await api.get('/fptk', { params: { ...filters, ...pagination } })
     return res.data
+  },
+  async getCountsByCurrentStatus(search?: string) {
+    const res = await api.get('/fptk/counts-by-current-status', {
+      params: search ? { search } : {},
+    })
+    return res.data.data as Record<string, number>
   },
   async getSummaryByPosition() {
     const res = await api.get('/fptk/summary-by-position')
@@ -346,11 +355,15 @@ export const FPTKAPI = {
 
 // Candidates APIs
 export const CandidatesAPI = {
-  async getAll(filters?: { search?: string; skills?: string[]; minScore?: number }, pagination?: { page?: number; limit?: number }) {
+  async getAll(
+    filters?: { search?: string; skills?: string[]; minScore?: number; sortBy?: 'name' | string },
+    pagination?: { page?: number; limit?: number }
+  ) {
     const params: any = { ...pagination }
     if (filters?.search) params.search = filters.search
     if (filters?.skills) params.skills = filters.skills.join(',')
     if (filters?.minScore) params.minScore = filters.minScore
+    if (filters?.sortBy) params.sortBy = filters.sortBy
     const res = await api.get('/candidates', { params })
     // API returns { success: true, data: [...], pagination: {...} }
     // Return the full response so frontend can access .data and .pagination

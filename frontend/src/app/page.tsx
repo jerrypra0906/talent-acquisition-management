@@ -317,6 +317,16 @@ export default function Dashboard() {
   const [openPositionsList, setOpenPositionsList] = useState<any[]>([])
   const openPositionsLoadedOnceRef = useRef(false)
 
+  const TOTAL_CANDIDATES_MODAL_PAGE_SIZE = 100
+  const [totalCandidatesModal, setTotalCandidatesModal] = useState<{
+    page: number
+    totalPages: number
+    total: number
+    items: DashboardListItem[]
+    loading: boolean
+  } | null>(null)
+  const [totalCandidatesQuery, setTotalCandidatesQuery] = useState('')
+
 const filteredPositions = useMemo(
   () => filterPositionsByPriority(allPositions, priorityFilter),
   [allPositions, priorityFilter]
@@ -450,9 +460,19 @@ useEffect(() => {
   setDashboardStats({
     totalCandidates: baseStats.totalCandidates ?? 0,
     activeApplications: baseStats.activeApplications ?? 0,
-    openPositions: baseStats.openPositions ?? openPositionItems.length,
-    closedPositions: baseStats.closedPositions ?? closedPositionItems.length,
-    holdPositions: baseStats.holdPositions ?? holdPositionItems.length,
+    // Prefer API (baseStats); only fall back to client-derived list when API omitted the field
+    openPositions:
+      baseStats.openPositions !== undefined && baseStats.openPositions !== null
+        ? baseStats.openPositions
+        : openPositionItems.length,
+    closedPositions:
+      baseStats.closedPositions !== undefined && baseStats.closedPositions !== null
+        ? baseStats.closedPositions
+        : closedPositionItems.length,
+    holdPositions:
+      baseStats.holdPositions !== undefined && baseStats.holdPositions !== null
+        ? baseStats.holdPositions
+        : holdPositionItems.length,
     interviewsThisWeek: interviewsCount,
     hiredThisMonth: hiredCount,
     recentActivity: baseStats.recentActivity ?? [],
@@ -592,42 +612,28 @@ useEffect(() => {
       console.log('Open Position Progress:', stats.openPositionProgress)
       console.log('SLA by Location:', stats.slaByLocation)
       
-      // Fallback compute open positions if API returns zero
-      let openPositionsComputed = stats.openPositions ?? 0
-      if (!openPositionsComputed || openPositionsComputed === 0) {
-        if (typeof window !== 'undefined') {
-          try {
-            const jobPostingsData = localStorage.getItem('jobPostings')
-            const jobPostings = jobPostingsData ? JSON.parse(jobPostingsData) : []
-            openPositionsComputed = jobPostings.filter((j: any) => j.status !== 'On Boarding' && j.status !== 'Cancelled').length
-          } catch (error) {
-            console.warn('Could not load positions from localStorage:', error)
-          }
-        }
-      }
-
+      // Trust API counts (including 0). Do not fall back to localStorage when the server
+      // correctly returns zero — stale jobPostings in localStorage caused Open Positions to
+      // show hundreds after all positions were deleted.
       const base = {
-        totalCandidates: stats.totalCandidates || 0,
-        activeApplications: stats.activeApplications || 0,
-        recentActivity: stats.recentActivity || [],
-        openPositions: stats.openPositions || 0,
+        totalCandidates: stats.totalCandidates ?? 0,
+        activeApplications: stats.activeApplications ?? 0,
+        recentActivity: stats.recentActivity ?? [],
+        openPositions: stats.openPositions ?? 0,
         closedPositions: stats.closedPositions ?? 0,
         holdPositions: stats.holdPositions ?? 0,
         interviewsThisWeek: stats.interviewsThisWeek ?? 0,
         hiredThisMonth: stats.hiredThisMonth ?? 0,
-        positionStatusByLocation: stats.positionStatusByLocation || [],
-        openPositionProgress: stats.openPositionProgress || [],
-        slaByLocation: stats.slaByLocation || [],
+        positionStatusByLocation: stats.positionStatusByLocation ?? [],
+        openPositionProgress: stats.openPositionProgress ?? [],
+        slaByLocation: stats.slaByLocation ?? [],
       }
 
       console.log('Dashboard base stats:', base)
       console.log('API closedPositions:', stats.closedPositions)
       console.log('API holdPositions:', stats.holdPositions)
 
-      setBaseStats({
-        ...base,
-        openPositions: openPositionsComputed || stats.openPositions || stats.activeFPTKs || stats.totalFPTKs || 0,
-      })
+      setBaseStats(base)
       setAllPositions([])
     } catch (error: any) {
       console.error('Error loading dashboard data:', error)
@@ -689,16 +695,63 @@ useEffect(() => {
     }
   }
 
+  const mapApiCandidatesToDashboardItems = (rows: any[]): DashboardListItem[] =>
+    (rows || []).map((c: any) => ({
+      id: c.id,
+      kind: 'candidate' as const,
+      title: `${c.user?.firstName || ''} ${c.user?.lastName || ''}`.trim() || 'Unknown',
+      subtitle: c.user?.email || 'No email',
+      meta: c._count?.applications ? `${c._count.applications} application(s)` : 'No applications',
+    }))
+
+  const loadTotalCandidatesModalPage = async (page: number) => {
+    setTotalCandidatesModal((prev) =>
+      prev
+        ? { ...prev, loading: true }
+        : { page: 1, totalPages: 1, total: 0, items: [], loading: true }
+    )
+    try {
+      const response = await CandidatesAPI.getAll(
+        { sortBy: 'name' },
+        { page, limit: TOTAL_CANDIDATES_MODAL_PAGE_SIZE }
+      )
+      const raw = response.data || []
+      const p = response.pagination || {}
+      const totalPages = Math.max(1, p.totalPages ?? 1)
+      const total = typeof p.total === 'number' ? p.total : raw.length
+      setTotalCandidatesModal({
+        page: p.page ?? page,
+        totalPages,
+        total,
+        items: mapApiCandidatesToDashboardItems(raw),
+        loading: false,
+      })
+    } catch (error: any) {
+      console.error('Error loading candidates list:', error)
+      setTotalCandidatesModal({
+        page: 1,
+        totalPages: 1,
+        total: 0,
+        items: [],
+        loading: false,
+      })
+    }
+  }
+
   const openFptkEdit = (id?: string) => {
     if (!id) return
     setDetailModal(null)
     setOpenPositionsModalOpen(false)
+    setTotalCandidatesModal(null)
+    setTotalCandidatesQuery('')
     router.push(`/fptk?edit=${encodeURIComponent(id)}`)
   }
 
   const openCandidateView = (id?: string) => {
     if (!id) return
     setDetailModal(null)
+    setTotalCandidatesModal(null)
+    setTotalCandidatesQuery('')
     router.push(`/candidates?view=${encodeURIComponent(id)}`)
   }
 
@@ -771,6 +824,18 @@ useEffect(() => {
                   }
                   return
                 }
+                if (item.name === 'Total Candidates') {
+                  setTotalCandidatesQuery('')
+                  setTotalCandidatesModal({
+                    page: 1,
+                    totalPages: 1,
+                    total: 0,
+                    items: [],
+                    loading: true,
+                  })
+                  await loadTotalCandidatesModalPage(1)
+                  return
+                }
                 setDetailModal({ title: item.name, items: [] })
                 try {
                   let items: DashboardListItem[] = []
@@ -783,19 +848,7 @@ useEffect(() => {
                     meta: position?.currentStatus || position?.status || 'N/A',
                   })
 
-                  if (item.name === 'Total Candidates') {
-                    const response = await CandidatesAPI.getAll({}, { page: 1, limit: 100 })
-                    const candidates = response.data || []
-                    items = candidates.map((c: any) => ({
-                      id: c.id,
-                      kind: 'candidate' as const,
-                      title: `${c.user?.firstName || ''} ${c.user?.lastName || ''}`.trim() || 'Unknown',
-                      subtitle: c.user?.email || 'No email',
-                      meta: c._count?.applications ? `${c._count.applications} application(s)` : 'No applications',
-                    }))
-                  } else if (item.name === 'Open Positions') {
-                    items = openPositionItems
-                  } else if (item.name === 'Closed Positions') {
+                  if (item.name === 'Closed Positions') {
                     const pos = await fetchAllFptksForDashboard()
                     setAllPositions(pos)
                     items = filterPositionsByPriority(pos, priorityFilter)
@@ -940,6 +993,114 @@ useEffect(() => {
                 >
                   Close
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {totalCandidatesModal && (
+          <div
+            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+            onClick={() => {
+              setTotalCandidatesModal(null)
+              setTotalCandidatesQuery('')
+            }}
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b flex items-center justify-between gap-3 shrink-0">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Total Candidates</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Sorted A–Z by name · {TOTAL_CANDIDATES_MODAL_PAGE_SIZE} per page
+                  </p>
+                </div>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    setTotalCandidatesModal(null)
+                    setTotalCandidatesQuery('')
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="px-6 py-3 border-b shrink-0">
+                <input
+                  value={totalCandidatesQuery}
+                  onChange={(e) => setTotalCandidatesQuery(e.target.value)}
+                  placeholder="Filter this page by name or email…"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="px-6 py-4 overflow-auto flex-1 min-h-0">
+                {totalCandidatesModal.loading ? (
+                  <div className="text-sm text-gray-500 py-8 text-center">Loading…</div>
+                ) : (
+                  <ul className="divide-y">
+                    {totalCandidatesModal.items
+                      .filter((it) => matchesQuery(it, totalCandidatesQuery))
+                      .map((it: DashboardListItem, idx: number) => (
+                        <li key={it.id || idx} className="py-3">
+                          <button
+                            className="w-full text-left"
+                            onClick={() => openCandidateView(it.id)}
+                          >
+                            <div className="text-sm font-medium text-indigo-700 hover:underline">{it.title}</div>
+                            {it.subtitle && <div className="text-sm text-gray-600">{it.subtitle}</div>}
+                            {it.meta && <div className="text-xs text-gray-500 mt-1">{it.meta}</div>}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+                {!totalCandidatesModal.loading &&
+                  totalCandidatesModal.items.filter((it) => matchesQuery(it, totalCandidatesQuery)).length ===
+                    0 && (
+                    <div className="text-sm text-gray-500 py-4">No candidates on this page match your filter.</div>
+                  )}
+              </div>
+
+              <div className="px-6 py-4 border-t flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <p className="text-xs text-gray-500">
+                  Page {totalCandidatesModal.page} of {totalCandidatesModal.totalPages} ·{' '}
+                  {totalCandidatesModal.total} total
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={totalCandidatesModal.loading || totalCandidatesModal.page <= 1}
+                    onClick={() => loadTotalCandidatesModalPage(totalCandidatesModal.page - 1)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      totalCandidatesModal.loading ||
+                      totalCandidatesModal.page >= totalCandidatesModal.totalPages
+                    }
+                    onClick={() => loadTotalCandidatesModalPage(totalCandidatesModal.page + 1)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTotalCandidatesModal(null)
+                      setTotalCandidatesQuery('')
+                    }}
+                    className="px-3 py-1.5 text-sm rounded-md border text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>

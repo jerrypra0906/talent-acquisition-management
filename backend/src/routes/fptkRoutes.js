@@ -107,6 +107,7 @@ router.get(
       department: req.query.department,
       isPublished: req.query.isPublished,
       search: req.query.search,
+      currentStatus: req.query.currentStatus,
     };
     
     const pagination = {
@@ -138,6 +139,27 @@ router.get(
     res.json({
       success: true,
       data: result,
+    });
+  })
+);
+
+/**
+ * @route   GET /api/fptk/counts-by-current-status
+ * @desc    Row counts per Current Status (scoped like list; optional search only)
+ * @access  Private
+ */
+router.get(
+  '/counts-by-current-status',
+  authenticate,
+  authorize('TA_TEAM', 'HRBP', 'SUPER_ADMIN', 'HIRING_MANAGER', 'CHRO', 'DEPARTMENT_HEAD'),
+  asyncHandler(async (req, res) => {
+    const filters = {
+      search: req.query.search,
+    };
+    const data = await fptkService.getFptkCurrentStatusCounts(filters, req.user);
+    res.json({
+      success: true,
+      data,
     });
   })
 );

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -18,7 +18,12 @@ const mapEmploymentType = (value?: string): JobType => {
 }
 
 import { PlusIcon, MagnifyingGlassIcon, BriefcaseIcon, EyeIcon, PencilIcon, ArrowUpTrayIcon, DocumentArrowDownIcon, XMarkIcon, DocumentDuplicateIcon, TrashIcon } from '@heroicons/react/24/outline'
-import { parseFPTKExcelFile, generateFPTKTemplate, FPTKUploadResult } from '@/utils/fptkExcelParser'
+import {
+  parseFPTKExcelFile,
+  generateFPTKTemplate,
+  getPositionNameForFailedExport,
+  FPTKUploadResult,
+} from '@/utils/fptkExcelParser'
 import { FPTKAPI, MenuAccessAPI } from '@/lib/api'
 import MultiSelectDropdown from '@/components/MultiSelectDropdown'
 
@@ -367,6 +372,11 @@ export default function FPTKPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<10 | 50 | 100>(50)
+  const [listPagination, setListPagination] = useState({ total: 0, totalPages: 1 })
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({})
+  const statusFilterKey = useMemo(() => [...statusFilters].sort().join('|'), [statusFilters])
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -377,25 +387,55 @@ export default function FPTKPage() {
   const loadFPTKs = async () => {
     try {
       setLoading(true)
-      const response = await FPTKAPI.getAll({ search: searchTerm }, { page: 1, limit: 100 })
-      // Map backend FPTK to frontend FPTK format
-      const mappedFPTKs: FPTK[] = response.data.map((fptk: any) => mapApiFptk(fptk))
+      const currentStatusParam =
+        statusFilters.length > 0 ? statusFilters.map((s) => s.trim()).join(',') : undefined
+      const [response, counts] = await Promise.all([
+        FPTKAPI.getAll(
+          {
+            search: searchTerm,
+            ...(currentStatusParam ? { currentStatus: currentStatusParam } : {}),
+          },
+          { page, limit: pageSize }
+        ),
+        FPTKAPI.getCountsByCurrentStatus(searchTerm),
+      ])
+      const mappedFPTKs: FPTK[] = (response.data || []).map((fptk: any) => mapApiFptk(fptk))
       setFptks(mappedFPTKs)
+      const pag = response.pagination || {}
+      setListPagination({
+        total: typeof pag.total === 'number' ? pag.total : mappedFPTKs.length,
+        totalPages: Math.max(1, pag.totalPages ?? 1),
+      })
+      setStatusCounts(counts || {})
     } catch (error) {
       console.error('Error loading FPTKs:', error)
       alert('Failed to load positions. Please try again.')
       setFptks([])
+      setListPagination({ total: 0, totalPages: 1 })
     } finally {
       setLoading(false)
     }
   }
 
+  const fptkListBootRef = useRef(true)
   useEffect(() => {
-    if (isAuthenticated && !isLoading) {
-      loadFPTKs()
+    if (!isAuthenticated || isLoading) return
+    if (fptkListBootRef.current) {
+      fptkListBootRef.current = false
+      return
     }
+    setPage(1)
+  }, [searchTerm, pageSize, statusFilterKey, isAuthenticated, isLoading])
+
+  useEffect(() => {
+    if (!isAuthenticated || isLoading) return
+    const delay = searchTerm ? 300 : 0
+    const timer = setTimeout(() => {
+      loadFPTKs()
+    }, delay)
+    return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, isLoading])
+  }, [page, pageSize, searchTerm, statusFilterKey, isAuthenticated, isLoading])
 
   // Deep-link: /fptk?edit=<id> opens Edit modal directly
   useEffect(() => {
@@ -409,16 +449,6 @@ export default function FPTKPage() {
     autoEditHandledRef.current = true
     handleEditJobPosting(found)
   }, [isAuthenticated, isLoading, fptks])
-
-  // Reload FPTKs when search term changes (with debounce)
-  useEffect(() => {
-    if (!isAuthenticated || isLoading) return
-    const timer = setTimeout(() => {
-      loadFPTKs()
-    }, 300)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm])
 
   useEffect(() => {
     setSelectedIds((prev) => prev.filter((id) => fptks.some((f) => f.id === id)))
@@ -857,8 +887,7 @@ export default function FPTKPage() {
 
           const rows = result.failed.map((item: any, idx: number) => {
             const rowNum = item?.row ?? (idx + 1)
-            const position = (item?.data?.position || item?.data?.Position || '—')
-              .toString()
+            const position = getPositionNameForFailedExport(item?.data)
               .replaceAll('"', '""')
             const errors = (Array.isArray(item?.errors) ? item.errors.join('; ') : '')
               .toString()
@@ -934,18 +963,7 @@ export default function FPTKPage() {
   // Debug: Log role check
   console.log('FPTK Page - Role check:', { roleName, canUpload, visibleRoles })
 
-  // Filter and sort FPTKs
   const filteredFptks = fptks
-    .filter(fptk => {
-      // Filter by status (OR)
-      if (statusFilters.length > 0) {
-        const currentStatus = ((fptk as any).currentStatus || DEFAULT_CURRENT_STATUS).trim()
-        if (!statusFilters.includes(currentStatus)) {
-          return false
-        }
-      }
-      return true
-    })
     .sort((a, b) => {
       if (!sortBy) return 0
       
@@ -1119,6 +1137,18 @@ export default function FPTKPage() {
                 </button>
               )}
             </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Per page</label>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value) as 10 | 50 | 100)}
+                className="block pl-3 pr-8 py-2 border border-gray-300 rounded-md leading-5 bg-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value={10}>10</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1130,9 +1160,10 @@ export default function FPTKPage() {
           </p>
           <div className="flex flex-wrap gap-2">
             {CURRENT_STATUS_OPTIONS.map((st) => {
-              const count = fptks.filter(
-                (f) => ((f as any).currentStatus || DEFAULT_CURRENT_STATUS).trim() === st
-              ).length
+              const count =
+                statusCounts[st] ??
+                statusCounts[(st || '').trim()] ??
+                (st === DEFAULT_CURRENT_STATUS ? statusCounts[''] ?? 0 : 0)
               const active = statusFilters.includes(st)
               return (
                 <button
@@ -1305,6 +1336,34 @@ export default function FPTKPage() {
               ))}
             </ul>
           )}
+        </div>
+
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-gray-600">
+          <span>
+            Showing {listPagination.total === 0 ? 0 : (page - 1) * pageSize + 1}–
+            {Math.min(page * pageSize, listPagination.total)} of {listPagination.total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <span className="tabular-nums">
+              Page {page} / {listPagination.totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= listPagination.totalPages || loading}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
         </div>
 
         {/* Create Job Posting Modal */}
