@@ -85,8 +85,8 @@ export default function EditJobPostingModal({
       INTERVIEW_SCHEDULED: 'Interview Scheduled',
       INTERVIEW_COMPLETED: 'Interviewed',
       DOCUMENT_VERIFICATION: 'Document Verification',
-      OFFER_PROPOSED: 'Offer Proposed',
-      OFFER_APPROVED: 'Offer Approved',
+      OFFER_PROPOSED: 'Offering Creation',
+      OFFER_APPROVED: 'Pending Feedback',
       OFFER_SENT: 'Offer Sent',
       OFFER_ACCEPTED: 'Offer Accepted',
       OFFER_REJECTED: 'Offer Rejected',
@@ -2014,6 +2014,7 @@ export default function EditJobPostingModal({
                   <option value="Hold">Hold</option>
                   <option value="Cancel">Cancel</option>
                   <option value="Internal Movement">Internal Movement</option>
+                  <option value="Close">Close</option>
                 </select>
                 {isEditingDisabled && (
                   <p style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>
@@ -2221,8 +2222,10 @@ export default function EditJobPostingModal({
                             <option value="Shortlisted">Shortlisted</option>
                             <option value="Interview Scheduled">Interview Scheduled</option>
                             <option value="Interviewed">Interviewed</option>
-                            <option value="Offer Accepted">Offer Accepted</option>
                             <option value="Assessment">Assessment</option>
+                            <option value="Offering Creation">Offering Creation</option>
+                            <option value="Pending Feedback">Pending Feedback</option>
+                            <option value="Offer Accepted">Offer Accepted</option>
                             <option value="MCU">MCU</option>
                             <option value="On Boarding">On Boarding</option>
                             <option value="Offer Rejected">Offer Rejected</option>
@@ -2256,7 +2259,8 @@ export default function EditJobPostingModal({
                         const postInterviewStatuses = [
                           'Document Verification',
                           'Assessment',
-                          'Offer Approved',
+                          'Pending Feedback',
+                          'Offering Creation',
                           'Offer Sent',
                           'Offer Accepted',
                           'Offer Rejected',

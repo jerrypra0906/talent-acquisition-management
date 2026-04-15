@@ -125,6 +125,24 @@ router.get(
 );
 
 /**
+ * @route   GET /api/fptk/summary-by-position
+ * @desc    Summary by Position (pre-aggregated application counts per FPTK)
+ * @access  Private (TA, HRBP, Admin, HM, CHRO, Dept Head)
+ */
+router.get(
+  '/summary-by-position',
+  authenticate,
+  authorize('TA_TEAM', 'HRBP', 'SUPER_ADMIN', 'HIRING_MANAGER', 'CHRO', 'DEPARTMENT_HEAD'),
+  asyncHandler(async (req, res) => {
+    const result = await fptkService.getSummaryByPosition(req.user);
+    res.json({
+      success: true,
+      data: result,
+    });
+  })
+);
+
+/**
  * @route   GET /api/fptk/:id
  * @desc    Get FPTK by ID
  * @access  Private / Public (based on published status)
