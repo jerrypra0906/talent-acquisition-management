@@ -920,7 +920,6 @@ model MasterDivision {
   divisionName      String
   sectionName       String
   headOfDivisionName String
-  hiringManagerName String    @default("")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

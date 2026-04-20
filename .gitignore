@@ -7,11 +7,3 @@ ssl/*.crt
 ssl/*.p12
 ssl/*.pfx
 !ssl/README.md
-
-# Logs / coverage / backups (generated)
-backend/logs/
-backend/coverage/
-backend/.env*
-*.sql
-database/
-nginx/ssl/

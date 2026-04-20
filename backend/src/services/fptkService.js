@@ -1,8 +1,5 @@
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
-const { buildHrbpFptkFilterFromUser } = require('../utils/hrbpScope');
-const masterOfficeLocationService = require('./masterOfficeLocationService');
-const masterDivisionService = require('./masterDivisionService');
 
 const UI_STATUS_TO_APP_STATUS_MAP = {
   'applied': 'SUBMITTED',
@@ -156,196 +153,6 @@ function httpError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
-}
-
-function normField(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
-const ALLOWED_STATUS_FKTK = new Set(['pending', 'received', '']);
-const ALLOWED_PRIORITY = new Set(['p0', 'p1', 'p2', '']);
-const ALLOWED_CRITERIA = new Set(['staff', 'non staff']);
-const ALLOWED_ADD_REP = new Set(['additional', 'replacement']);
-const ALLOWED_CURRENT_STATUS = new Set([
-  'open',
-  'pending fktk',
-  're-open',
-  'hold',
-  'cancel',
-  'internal movement',
-  'close',
-]);
-const ALLOWED_EMP_CANON = new Set(['contract', 'internship', 'full time employee']);
-const EMP_LEGACY = {
-  kontrak: 'Contract',
-  contract: 'Contract',
-  probation: 'Full Time Employee',
-  'full-time': 'Full Time Employee',
-  fulltime: 'Full Time Employee',
-  'full time': 'Full Time Employee',
-  'part-time': 'Contract',
-  parttime: 'Contract',
-  internship: 'Internship',
-};
-
-function normalizeEmploymentForApi(raw) {
-  const n = normField(raw);
-  if (!n) return null;
-  if (ALLOWED_EMP_CANON.has(n)) {
-    if (n === 'contract') return 'Contract';
-    if (n === 'internship') return 'Internship';
-    if (n === 'full time employee') return 'Full Time Employee';
-  }
-  return EMP_LEGACY[n] || null;
-}
-
-/** Normalized allowed applied-candidate status labels (aligned with frontend template). */
-const ALLOWED_APPLIED_STATUS = new Set(
-  [
-    'Applied',
-    'Under Review',
-    'Shortlisted',
-    'Interview Scheduled',
-    'Interviewed',
-    'Assessment',
-    'Offering Creation',
-    'Pending Feedback',
-    'Document Verification',
-    'Offer Sent',
-    'Offer Accepted',
-    'Offer Rejected',
-    'MCU',
-    'Medical Checkup Scheduled',
-    'Medical Checkup Completed',
-    'Contract Sent',
-    'Contract Signed',
-    'On Boarding',
-    'Hired',
-    'Rejected (Failed Interview / Assessment)',
-    'Withdrawn',
-  ].map((s) => normField(s))
-);
-
-async function validateFptkFormFields(payload) {
-  const pt = (payload.pt || '').toString().trim();
-  if (!pt) {
-    throw httpError(400, 'PT is required');
-  }
-
-  const locations = await masterOfficeLocationService.getAllOfficeLocations({});
-  const ptSet = new Set(locations.map((l) => (l.pt || '').toString().trim()).filter(Boolean));
-  if (!ptSet.has(pt)) {
-    throw httpError(400, `PT "${pt}" is not registered in Master Office Location`);
-  }
-
-  const sf = (payload.statusFktk || '').toString().trim();
-  if (sf && !ALLOWED_STATUS_FKTK.has(normField(sf))) {
-    throw httpError(400, `Invalid Status FKTK: "${payload.statusFktk}". Use Pending or Received.`);
-  }
-
-  const emp = (payload.employmentType || '').toString().trim();
-  if (!emp) {
-    throw httpError(400, 'Employment Type is required');
-  }
-  if (!normalizeEmploymentForApi(emp)) {
-    throw httpError(
-      400,
-      `Invalid Employment Type: "${payload.employmentType}". Use Contract, Internship, or Full Time Employee.`
-    );
-  }
-
-  const pr = (payload.priority || payload.urgentNormal || '').toString().trim();
-  if (pr && !ALLOWED_PRIORITY.has(normField(pr))) {
-    throw httpError(400, `Invalid Priority: "${pr}". Use P0, P1, or P2.`);
-  }
-
-  const cr = (payload.criteria || '').toString().trim();
-  if (!cr) {
-    throw httpError(400, 'Criteria is required');
-  }
-  if (!ALLOWED_CRITERIA.has(normField(cr))) {
-    throw httpError(400, `Invalid Criteria: "${payload.criteria}". Use Staff or Non Staff.`);
-  }
-
-  const ar = (payload.additionalOrReplacement || '').toString().trim();
-  if (!ar) {
-    throw httpError(400, 'Additional or Replacement is required');
-  }
-  if (!ALLOWED_ADD_REP.has(normField(ar))) {
-    throw httpError(400, `Invalid Additional or Replacement: "${payload.additionalOrReplacement}". Use Additional or Replacement.`);
-  }
-
-  const cs = (payload.currentStatus || '').toString().trim();
-  if (cs && !ALLOWED_CURRENT_STATUS.has(normField(cs))) {
-    throw httpError(
-      400,
-      `Invalid Current Status: "${payload.currentStatus}". Use values from the Position form (Open, Pending FKTK, …).`
-    );
-  }
-
-  const divisions = await masterDivisionService.getAllDivisions({});
-  const divName = (payload.division || '').toString().trim();
-  if (!divName) {
-    throw httpError(400, 'Division is required');
-  }
-  {
-    const hasDiv = divisions.some((d) => normField(d.divisionName) === normField(divName));
-    if (!hasDiv) {
-      throw httpError(400, `Division "${divName}" is not found in Master Division`);
-    }
-  }
-
-  const secName = (payload.section || '').toString().trim();
-  if (!secName) {
-    throw httpError(400, 'Section is required');
-  }
-  if (divName && secName) {
-    const ok = divisions.some(
-      (d) =>
-        normField(d.divisionName) === normField(divName) &&
-        normField(d.sectionName) === normField(secName)
-    );
-    if (!ok) {
-      throw httpError(400, `Section "${secName}" is not valid for Division "${divName}"`);
-    }
-  }
-
-  const area = (payload.area || '').toString().trim();
-  const areaDetail = (payload.areaDetail || '').toString().trim();
-  if (!area) {
-    throw httpError(400, 'Area is required');
-  }
-  if (!areaDetail) {
-    throw httpError(400, 'Area Detail is required');
-  }
-  const tripleOk = locations.some(
-    (l) =>
-      (l.pt || '').toString().trim() === pt &&
-      normField(l.area) === normField(area) &&
-      normField((l.areaDetail || '').toString()) === normField(areaDetail)
-  );
-  if (!tripleOk) {
-    throw httpError(
-      400,
-      `Area / Area Detail "${area}" / "${areaDetail}" is not valid for PT "${pt}" in Master Office Location`
-    );
-  }
-
-  const applied = payload.appliedCandidates;
-  if (applied && Array.isArray(applied)) {
-    applied.forEach((c, idx) => {
-      const st = (c && c.status ? String(c.status) : '').trim();
-      if (st && !ALLOWED_APPLIED_STATUS.has(normField(st))) {
-        throw httpError(
-          400,
-          `Invalid Applied Candidate ${idx + 1} Status: "${st}". Use a status from the Position form list.`
-        );
-      }
-    });
-  }
 }
 
 async function resolveCandidateIdTx(tx, { candidateId, email, fullName }) {
@@ -682,12 +489,6 @@ async function createFPTK(data, creatorId) {
     fptkNumber = null;
   }
 
-  await validateFptkFormFields(data);
-  const empCanon = normalizeEmploymentForApi((data.employmentType || '').toString());
-  if (empCanon) {
-    data.employmentType = empCanon;
-  }
-
   const appliedCandidatesProvided = data.appliedCandidates !== undefined || data.appliedCandidateIds !== undefined;
   const normalizedAppliedCandidates = appliedCandidatesProvided
     ? normalizeAppliedCandidates(data.appliedCandidates ?? data.appliedCandidateIds)
@@ -894,27 +695,42 @@ async function getFPTKById(fptkId) {
 }
 
 /**
- * Shared WHERE clause for internal FPTK list + aggregates (same access rules as list).
+ * Get all FPTKs with filters
  */
-function buildInternalFptkListWhere(filters = {}, user = null) {
+async function getAllFPTKs(filters, pagination, user = null) {
+  const { page = 1, limit = 20 } = pagination;
+  const skip = (page - 1) * limit;
+
   const where = {};
 
+  // Role-based filtering
   if (user) {
     const userRole = user.role;
     const userFirstName = user.firstName;
     const userDivision = user.division;
-    if ((userRole === 'HIRING_MANAGER' || userRole === 'HIRING_MANAGER') && userFirstName) {
-      where.hiringManager = userFirstName;
-    } else if ((userRole === 'Head of Division' || userRole === 'DEPARTMENT_HEAD') && userDivision) {
-      where.division = userDivision;
+    const userPt = user.pt;
+    const userArea = user.area;
+    const userAreaDetail = user.areaDetail;
+
+      if ((userRole === 'HIRING_MANAGER' || userRole === 'HIRING_MANAGER') && userFirstName) {
+        // HIRING_MANAGER: only see positions where Position.Hiring Manager = Team.First Name
+        where.hiringManager = userFirstName;
+      } else if ((userRole === 'Head of Division' || userRole === 'DEPARTMENT_HEAD') && userDivision) {
+        // Head of Division: only see positions where Position.Division = Team.Division
+        where.division = userDivision;
     } else if (userRole === 'HRBP') {
-      const hrbp = buildHrbpFptkFilterFromUser(user);
-      if (hrbp) {
-        Object.assign(where, hrbp);
+      // HRBP: only see positions where Position.PT = Team.PT AND Position.Area = Team.Area AND Position.Area Detail = Team.Area Detail
+      // All three fields must be present and match
+      if (userPt && userArea && userAreaDetail) {
+        where.pt = userPt;
+        where.area = userArea;
+        where.areaDetail = userAreaDetail;
       } else {
-        where.id = '00000000-0000-0000-0000-000000000000';
+        // If any field is missing, return no results (HRBP must have all three fields)
+        where.id = '00000000-0000-0000-0000-000000000000'; // Non-existent ID to return empty results
       }
     }
+    // SUPER_ADMIN, TA_TEAM, and other roles see all positions (no additional filtering)
   }
 
   if (filters.status) {
@@ -937,8 +753,12 @@ function buildInternalFptkListWhere(filters = {}, user = null) {
       { department: { contains: filters.search, mode: 'insensitive' } },
       { division: { contains: filters.search, mode: 'insensitive' } },
     ];
+    // If where.OR already exists (from role filtering), combine with AND
     if (where.OR) {
-      where.AND = [{ OR: where.OR }, { OR: searchConditions }];
+      where.AND = [
+        { OR: where.OR },
+        { OR: searchConditions }
+      ];
       delete where.OR;
     } else {
       where.OR = searchConditions;
@@ -953,55 +773,13 @@ function buildInternalFptkListWhere(filters = {}, user = null) {
     where.priority = filters.priority;
   }
 
-  if (filters.currentStatus) {
-    const parts = String(filters.currentStatus)
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (parts.length) {
-      where.currentStatus = { in: parts };
-    }
-  }
-
-  return where;
-}
-
-/**
- * Count FPTKs per currentStatus (for dashboard chips), scoped like the list.
- */
-async function getFptkCurrentStatusCounts(filters, user = null) {
-  const countFilters = { ...filters };
-  delete countFilters.currentStatus;
-  const where = buildInternalFptkListWhere(countFilters, user);
-  const rows = await prisma.fPTK.groupBy({
-    by: ['currentStatus'],
-    where,
-    _count: { _all: true },
-  });
-  const counts = {};
-  rows.forEach((r) => {
-    const key = r.currentStatus == null ? '' : String(r.currentStatus);
-    counts[key] = r._count._all;
-  });
-  return counts;
-}
-
-/**
- * Get all FPTKs with filters
- */
-async function getAllFPTKs(filters, pagination, user = null) {
-  const { page = 1, limit = 20 } = pagination;
-  const skip = (page - 1) * limit;
-
-  const where = buildInternalFptkListWhere(filters, user);
-
   const [fptks, total] = await Promise.all([
     prisma.fPTK.findMany({
       where,
       skip,
       take: limit,
       include: FPTK_RELATION_INCLUDE,
-      orderBy: { positionTitle: 'asc' },
+      orderBy: { createdAt: 'desc' },
     }),
     prisma.fPTK.count({ where }),
   ]);
@@ -1012,7 +790,7 @@ async function getAllFPTKs(filters, pagination, user = null) {
       page,
       limit,
       total,
-      totalPages: Math.ceil(total / limit) || 0,
+      totalPages: Math.ceil(total / limit),
     },
   };
 }
@@ -1026,6 +804,10 @@ async function getSummaryByPosition(user = null) {
     const userRole = user.role;
     const userFirstName = user.firstName;
     const userDivision = user.division;
+    const userPt = user.pt;
+    const userArea = user.area;
+    const userAreaDetail = user.areaDetail;
+
     if ((userRole === 'HIRING_MANAGER' || userRole === 'HIRING_MANAGER') && userFirstName) {
       fptkWhere.hiringManager = userFirstName;
       applicationWhere.fptk = { hiringManager: userFirstName };
@@ -1033,10 +815,11 @@ async function getSummaryByPosition(user = null) {
       fptkWhere.division = userDivision;
       applicationWhere.fptk = { division: userDivision };
     } else if (userRole === 'HRBP') {
-      const hrbp = buildHrbpFptkFilterFromUser(user);
-      if (hrbp) {
-        Object.assign(fptkWhere, hrbp);
-        applicationWhere.fptk = hrbp;
+      if (userPt && userArea && userAreaDetail) {
+        fptkWhere.pt = userPt;
+        fptkWhere.area = userArea;
+        fptkWhere.areaDetail = userAreaDetail;
+        applicationWhere.fptk = { pt: userPt, area: userArea, areaDetail: userAreaDetail };
       } else {
         fptkWhere.id = '00000000-0000-0000-0000-000000000000';
         applicationWhere.id = '00000000-0000-0000-0000-000000000000';
@@ -1115,14 +898,6 @@ async function updateFPTK(fptkId, data, updaterId) {
 
   if (!current) {
     throw new Error('FPTK not found');
-  }
-
-  await validateFptkFormFields({ ...current, ...data });
-  if (data.employmentType !== undefined) {
-    const empCanon = normalizeEmploymentForApi((data.employmentType || '').toString());
-    if (empCanon) {
-      data.employmentType = empCanon;
-    }
   }
 
   const statusFktkNormalized = ((data.statusFktk !== undefined ? data.statusFktk : current.statusFktk) || '')
@@ -1452,72 +1227,6 @@ async function getPublishedFPTKs(filters, pagination) {
 }
 
 /**
- * Permanently delete an FPTK and its dependent applications (SUPER_ADMIN only at route layer).
- * Applications must be removed first because Prisma has no onDelete cascade from FPTK -> Application.
- */
-async function deleteFPTK(fptkId) {
-  const existing = await prisma.fPTK.findUnique({
-    where: { id: fptkId },
-    select: { id: true, position: true, positionTitle: true },
-  });
-
-  if (!existing) {
-    throw httpError(404, 'Position not found');
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.application.deleteMany({ where: { fptkId } });
-    await tx.fPTK.delete({ where: { id: fptkId } });
-  });
-
-  logger.info(`FPTK deleted: ${fptkId} (${existing.positionTitle || existing.position || 'untitled'})`);
-
-  return { id: fptkId };
-}
-
-const BULK_DELETE_MAX = 200;
-
-/**
- * Delete multiple FPTKs in one transaction (applications first, then positions).
- */
-async function deleteFPTKsBulk(rawIds) {
-  if (!Array.isArray(rawIds) || rawIds.length === 0) {
-    throw httpError(400, 'Provide a non-empty ids array');
-  }
-
-  const ids = [...new Set(rawIds.map((id) => String(id || '').trim()).filter(Boolean))];
-  if (ids.length === 0) {
-    throw httpError(400, 'No valid ids');
-  }
-  if (ids.length > BULK_DELETE_MAX) {
-    throw httpError(400, `You can delete at most ${BULK_DELETE_MAX} positions per request`);
-  }
-
-  const existing = await prisma.fPTK.findMany({
-    where: { id: { in: ids } },
-    select: { id: true },
-  });
-  const foundIds = existing.map((e) => e.id);
-  if (foundIds.length === 0) {
-    throw httpError(404, 'No matching positions found');
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await tx.application.deleteMany({ where: { fptkId: { in: foundIds } } });
-    await tx.fPTK.deleteMany({ where: { id: { in: foundIds } } });
-  });
-
-  const notFoundIds = ids.filter((id) => !foundIds.includes(id));
-  logger.info(`FPTK bulk delete: ${foundIds.length} position(s) removed`);
-
-  return {
-    deletedIds: foundIds,
-    deletedCount: foundIds.length,
-    notFoundIds,
-  };
-}
-
-/**
  * Update FPTK filled positions count
  */
 async function updateFilledPositions(fptkId) {
@@ -1557,11 +1266,8 @@ module.exports = {
   createFPTK,
   getFPTKById,
   getAllFPTKs,
-  getFptkCurrentStatusCounts,
   getSummaryByPosition,
   updateFPTK,
-  deleteFPTK,
-  deleteFPTKsBulk,
   publishFPTK,
   unpublishFPTK,
   getPublishedFPTKs,
