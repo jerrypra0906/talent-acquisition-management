@@ -10,7 +10,6 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:prod": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "node prisma/seed.js",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "lint": "eslint src/**/*.js",
@@ -75,8 +74,5 @@
   "engines": {
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
   }
 }
