@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
+import { matchesTokenizedSearch } from '@/utils/search'
 import { PlusIcon, MagnifyingGlassIcon, DocumentTextIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline'
 
 interface Offer {
@@ -53,11 +54,12 @@ export default function OffersPage() {
   }
 
   const filteredOffers = offers.filter(offer => {
-    const matchesSearch = 
-      offer.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      offer.candidateEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      offer.jobTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      offer.offerNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = matchesTokenizedSearch(searchTerm, [
+      offer.candidateName,
+      offer.candidateEmail,
+      offer.jobTitle,
+      offer.offerNumber,
+    ])
     
     const matchesStatus = statusFilter === 'all' || offer.status === statusFilter
     

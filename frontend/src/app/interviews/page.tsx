@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
 import { Interview } from '@/types'
+import { matchesTokenizedSearch } from '@/utils/search'
 import { PlusIcon, MagnifyingGlassIcon, CalendarDaysIcon, ClockIcon, MapPinIcon, VideoCameraIcon } from '@heroicons/react/24/outline'
 
 export default function InterviewsPage() {
@@ -41,10 +42,14 @@ export default function InterviewsPage() {
 
   const filteredInterviews = interviews.filter(interview => {
     const interviewWithApplication = interview as any
-    const matchesSearch = 
-      interviewWithApplication.application?.candidate?.user?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      interviewWithApplication.application?.candidate?.user?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      interviewWithApplication.application?.fptk?.title?.toLowerCase().includes(searchTerm.toLowerCase())
+    const firstName = interviewWithApplication.application?.candidate?.user?.firstName
+    const lastName = interviewWithApplication.application?.candidate?.user?.lastName
+    const matchesSearch = matchesTokenizedSearch(searchTerm, [
+      firstName,
+      lastName,
+      `${firstName || ''} ${lastName || ''}`,
+      interviewWithApplication.application?.fptk?.title,
+    ])
     
     const matchesStatus = statusFilter === 'all' || interview.status === statusFilter
     

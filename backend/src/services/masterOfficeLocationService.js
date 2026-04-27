@@ -1,5 +1,6 @@
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
+const { buildTokenizedSearch } = require('../utils/search');
 
 /**
  * Get all office locations
@@ -7,12 +8,17 @@ const logger = require('../utils/logger');
 async function getAllOfficeLocations(filters = {}) {
   const where = {};
 
-  if (filters.search) {
-    where.OR = [
-      { pt: { contains: filters.search, mode: 'insensitive' } },
-      { area: { contains: filters.search, mode: 'insensitive' } },
-      { areaDetail: { contains: filters.search, mode: 'insensitive' } },
-    ];
+  const tokenizedSearch = buildTokenizedSearch(filters, (token) => ([
+    { pt: { contains: token, mode: 'insensitive' } },
+    { area: { contains: token, mode: 'insensitive' } },
+    { areaDetail: { contains: token, mode: 'insensitive' } },
+  ]));
+  if (tokenizedSearch) {
+    if (tokenizedSearch.AND) {
+      where.AND = tokenizedSearch.AND;
+    } else {
+      where.OR = tokenizedSearch.OR;
+    }
   }
 
   if (filters.pt) {

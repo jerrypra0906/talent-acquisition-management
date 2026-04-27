@@ -18,6 +18,7 @@ import TestModal from '@/components/TestModal'
 import { PlusIcon, MagnifyingGlassIcon, LinkIcon } from '@heroicons/react/24/outline'
 import { Candidate, CandidateStatus, CandidateFile } from '@/types'
 import { saveCandidateLink } from '@/utils/candidateLink'
+import { matchesTokenizedSearch } from '@/utils/search'
 import { CandidatesAPI, MenuAccessAPI } from '@/lib/api'
 import BulkUploadModal from '@/components/BulkUploadModal'
 
@@ -548,10 +549,12 @@ export default function CandidatesPage() {
   const canGenerateLink = ['SUPER_ADMIN', 'TA_TEAM', 'HRBP'].includes(roleName)
 
   const filteredCandidates = candidates.filter(candidate => {
-    const matchesSearch = 
-      candidate.personalInfo.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      candidate.personalInfo.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      candidate.contactInfo.email.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = matchesTokenizedSearch(searchTerm, [
+      candidate.personalInfo.firstName,
+      candidate.personalInfo.lastName,
+      `${candidate.personalInfo.firstName} ${candidate.personalInfo.lastName}`,
+      candidate.contactInfo.email,
+    ])
     
     const matchesStatus = statusFilter === 'all' || candidate.status === statusFilter
     

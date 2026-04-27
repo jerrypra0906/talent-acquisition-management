@@ -1,5 +1,6 @@
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
+const { buildTokenizedSearch } = require('../utils/search');
 
 /**
  * Create application
@@ -236,24 +237,27 @@ async function getAllApplications(filters, pagination, user = null) {
     where.slaBreached = true;
   }
 
-  if (filters.search) {
-    const searchConditions = [
-      { candidate: { user: { firstName: { contains: filters.search, mode: 'insensitive' } } } },
-      { candidate: { user: { lastName: { contains: filters.search, mode: 'insensitive' } } } },
-      { candidate: { user: { email: { contains: filters.search, mode: 'insensitive' } } } },
-      { applicationNumber: { contains: filters.search, mode: 'insensitive' } },
-      { fptk: { positionTitle: { contains: filters.search, mode: 'insensitive' } } },
-      { fptk: { department: { contains: filters.search, mode: 'insensitive' } } },
-    ];
+  const tokenizedSearch = buildTokenizedSearch(filters, (token) => ([
+    { candidate: { user: { firstName: { contains: token, mode: 'insensitive' } } } },
+    { candidate: { user: { lastName: { contains: token, mode: 'insensitive' } } } },
+    { candidate: { user: { email: { contains: token, mode: 'insensitive' } } } },
+    { applicationNumber: { contains: token, mode: 'insensitive' } },
+    { fptk: { positionTitle: { contains: token, mode: 'insensitive' } } },
+    { fptk: { department: { contains: token, mode: 'insensitive' } } },
+  ]));
+
+  if (tokenizedSearch) {
     // If where.OR already exists (from role filtering), combine with AND
     if (where.OR) {
       where.AND = [
         { OR: where.OR },
-        { OR: searchConditions }
+        tokenizedSearch,
       ];
       delete where.OR;
+    } else if (tokenizedSearch.AND) {
+      where.AND = tokenizedSearch.AND;
     } else {
-      where.OR = searchConditions;
+      where.OR = tokenizedSearch.OR;
     }
   }
 

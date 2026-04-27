@@ -1,5 +1,6 @@
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
+const { buildTokenizedSearch } = require('../utils/search');
 
 /**
  * Get all divisions
@@ -7,12 +8,17 @@ const logger = require('../utils/logger');
 async function getAllDivisions(filters = {}) {
   const where = {};
 
-  if (filters.search) {
-    where.OR = [
-      { divisionName: { contains: filters.search, mode: 'insensitive' } },
-      { sectionName: { contains: filters.search, mode: 'insensitive' } },
-      { headOfDivisionName: { contains: filters.search, mode: 'insensitive' } },
-    ];
+  const tokenizedSearch = buildTokenizedSearch(filters, (token) => ([
+    { divisionName: { contains: token, mode: 'insensitive' } },
+    { sectionName: { contains: token, mode: 'insensitive' } },
+    { headOfDivisionName: { contains: token, mode: 'insensitive' } },
+  ]));
+  if (tokenizedSearch) {
+    if (tokenizedSearch.AND) {
+      where.AND = tokenizedSearch.AND;
+    } else {
+      where.OR = tokenizedSearch.OR;
+    }
   }
 
   if (filters.divisionName) {
