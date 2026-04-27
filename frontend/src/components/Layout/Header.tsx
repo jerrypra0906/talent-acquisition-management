@@ -4,9 +4,12 @@ import { Fragment } from 'react'
 import { Menu, Transition } from '@headlessui/react'
 import { Bars3Icon, BellIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { isTourablePath } from '@/lib/tour/tourConfig'
+import { useTourStore } from '@/stores/tourStore'
+import { HelpCircle } from 'lucide-react'
 
 interface HeaderProps {
   setSidebarOpen: (open: boolean) => void
@@ -14,7 +17,9 @@ interface HeaderProps {
 
 export default function Header({ setSidebarOpen }: HeaderProps) {
   const { user, logout, isAuthenticated } = useAuth()
-  const router = useRouter()
+  const pathname = usePathname()
+  const startCurrentPage = useTourStore((s) => s.startCurrentPage)
+  const tourUnavailable = useTourStore((s) => s.unavailable)
 
   const handleLogout = () => {
     try {
@@ -51,6 +56,7 @@ export default function Header({ setSidebarOpen }: HeaderProps) {
   }
 
   return (
+    <Fragment>
     <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
       <button
         type="button"
@@ -67,6 +73,20 @@ export default function Header({ setSidebarOpen }: HeaderProps) {
       <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
         <div className="flex flex-1"></div>
         <div className="flex items-center gap-x-4 lg:gap-x-6">
+          <button
+            type="button"
+            onClick={() => startCurrentPage()}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1',
+              !isTourablePath(pathname) && 'text-gray-500 hover:bg-gray-50'
+            )}
+            title={isTourablePath(pathname) ? 'Page guide for this area' : 'No guide for this page'}
+            aria-label="Start page tour"
+          >
+            <HelpCircle className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
+            <span className="hidden sm:inline">Guide</span>
+          </button>
+
           {/* Notifications */}
           <button
             type="button"
@@ -150,5 +170,15 @@ export default function Header({ setSidebarOpen }: HeaderProps) {
         </div>
       </div>
     </div>
+    {tourUnavailable && (
+      <div
+        className="pointer-events-none fixed right-4 top-[4.5rem] z-[60] max-w-md rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-md"
+        role="status"
+      >
+        No interactive guide is available for this page. Open Dashboard, Candidates, KIV, or Position and try
+        again.
+      </div>
+    )}
+    </Fragment>
   )
 }
