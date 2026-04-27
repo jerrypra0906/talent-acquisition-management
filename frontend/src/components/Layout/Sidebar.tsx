@@ -138,6 +138,7 @@ function PrimaryNavList({
               {item.children.map((ch) => (
                 <li key={ch.href}>
                   <Link
+                    data-tour={ch.href === '/candidates/kiv' ? 'nav-kiv' : undefined}
                     href={ch.href}
                     onClick={onLinkClick}
                     className={cn(

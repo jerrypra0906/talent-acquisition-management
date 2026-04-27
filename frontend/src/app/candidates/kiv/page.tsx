@@ -250,7 +250,7 @@ export default function KivPage() {
   return (
     <Layout>
       <div>
-        <div className="sm:flex sm:items-center sm:justify-between">
+        <div className="sm:flex sm:items-center sm:justify-between" data-tour="kiv-header">
           <div>
             <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
               <EyeIcon className="h-8 w-8 text-sky-600" aria-hidden />
@@ -259,7 +259,7 @@ export default function KivPage() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col sm:flex-row gap-4">
+        <div className="mt-6 flex flex-col sm:flex-row gap-4" data-tour="kiv-filters">
           <div className="flex-1">
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -316,7 +316,7 @@ export default function KivPage() {
           </div>
         </div>
 
-        <div className="mt-8 flow-root">
+        <div className="mt-8 flow-root" data-tour="kiv-table">
           <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
             <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
               <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">

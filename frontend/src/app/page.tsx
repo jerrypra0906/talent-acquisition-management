@@ -1065,7 +1065,10 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+        <div
+          className="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4"
+          data-tour="dashboard-time-filter"
+        >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
             <div className="inline-flex rounded-md shadow-sm">
                 {(['week', 'month', 'custom'] as const).map((m, index, arr) => (
@@ -1138,7 +1141,7 @@ useEffect(() => {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3" data-tour="dashboard-analytics">
           {stats.map((item) => (
             <button
               key={item.name}

@@ -1006,7 +1006,10 @@ export default function CandidatesPage() {
               Manage and track all candidate information and applications.
             </p>
           </div>
-          <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none flex gap-2 justify-end">
+          <div
+            className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none flex gap-2 justify-end"
+            data-tour="candidates-add"
+          >
             <button
               type="button"
               disabled={!canCreate}
@@ -1028,7 +1031,7 @@ export default function CandidatesPage() {
         </div>
 
         {/* Filters */}
-        <div className="mt-6 flex flex-col sm:flex-row gap-4">
+        <div className="mt-6 flex flex-col sm:flex-row gap-4" data-tour="candidates-filters">
           <div className="flex-1">
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -1063,7 +1066,7 @@ export default function CandidatesPage() {
         </div>
 
         {/* Candidates Table */}
-        <div className="mt-8 flow-root">
+        <div className="mt-8 flow-root" data-tour="candidates-lifecycle">
           <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
             <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
               <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
