@@ -252,9 +252,33 @@ export const MasterOfficeLocationAPI = {
 
 // FPTK APIs
 export const FPTKAPI = {
-  async getAll(filters?: { status?: string; department?: string; search?: string }, pagination?: { page?: number; limit?: number }) {
+  async getAll(
+    filters?: {
+      status?: string
+      department?: string
+      search?: string
+      currentStatus?: string
+      pt?: string
+      area?: string
+      areaDetail?: string
+    },
+    pagination?: { page?: number; limit?: number }
+  ) {
     const res = await api.get('/fptk', { params: { ...filters, ...pagination } })
     return res.data
+  },
+  async getCountsByCurrentStatus(
+    params?: { search?: string; pt?: string; area?: string; areaDetail?: string }
+  ) {
+    const q: Record<string, string> = {}
+    if (params?.search) q.search = params.search
+    if (params?.pt) q.pt = params.pt
+    if (params?.area) q.area = params.area
+    if (params?.areaDetail) q.areaDetail = params.areaDetail
+    const res = await api.get('/fptk/counts-by-current-status', {
+      params: Object.keys(q).length ? q : {},
+    })
+    return res.data.data as Record<string, number>
   },
   async getSummaryByPosition() {
     const res = await api.get('/fptk/summary-by-position')
@@ -334,15 +358,27 @@ export const FPTKAPI = {
     const res = await api.post(`/fptk/${id}/unpublish`)
     return res.data.data
   },
+  async delete(id: string) {
+    const res = await api.delete(`/fptk/${id}`)
+    return res.data.data
+  },
+  async deleteBulk(ids: string[]) {
+    const res = await api.post('/fptk/bulk-delete', { ids })
+    return res.data.data
+  },
 }
 
 // Candidates APIs
 export const CandidatesAPI = {
-  async getAll(filters?: { search?: string; skills?: string[]; minScore?: number }, pagination?: { page?: number; limit?: number }) {
+  async getAll(
+    filters?: { search?: string; skills?: string[]; minScore?: number; sortBy?: 'name' | string },
+    pagination?: { page?: number; limit?: number }
+  ) {
     const params: any = { ...pagination }
     if (filters?.search) params.search = filters.search
     if (filters?.skills) params.skills = filters.skills.join(',')
     if (filters?.minScore) params.minScore = filters.minScore
+    if (filters?.sortBy) params.sortBy = filters.sortBy
     const res = await api.get('/candidates', { params })
     // API returns { success: true, data: [...], pagination: {...} }
     // Return the full response so frontend can access .data and .pagination
@@ -415,10 +451,14 @@ export const CandidatesAPI = {
 
 // Applications APIs
 export const ApplicationsAPI = {
-  async getAll(filters?: { status?: string; fptkId?: string; department?: string; search?: string }, pagination?: { page?: number; limit?: number }) {
+  async getAll(
+    filters?: { status?: string; fptkId?: string; candidateId?: string; department?: string; search?: string },
+    pagination?: { page?: number; limit?: number }
+  ) {
     const params: any = { ...pagination }
     if (filters?.status) params.status = filters.status
     if (filters?.fptkId) params.fptkId = filters.fptkId
+    if (filters?.candidateId) params.candidateId = filters.candidateId
     if (filters?.department) params.department = filters.department
     if (filters?.search) params.search = filters.search
     const res = await api.get('/applications', { params })

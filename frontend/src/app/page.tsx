@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -15,6 +15,15 @@ import { DashboardStats, PositionStatusByLocation, OpenPositionProgress, SLALoca
 import { DashboardAPI, CandidatesAPI, FPTKAPI, ApplicationsAPI } from '@/lib/api'
 import { mapApiFptk } from './fptk/page'
 import { businessDaysDiffIndonesia } from '@/utils/indoBusinessDays'
+import {
+  getDashboardPeriodBounds,
+  itemTimestampInRange,
+  periodOverPeriodChange,
+  toMonthInputValue,
+  toWeekInputValue,
+  type DashboardTimeMode,
+  type DateRange,
+} from '@/utils/dashboardPeriod'
 
 const PRIORITY_FILTERS = ['ALL', 'P0', 'P1', 'P2'] as const
 
@@ -24,7 +33,13 @@ const normalizeUiCurrentStatus = (value?: string) => (value || '').trim().toLowe
 const isOpenCurrentStatusLabel = (value?: string) => {
   const s = normalizeUiCurrentStatus(value)
   if (!s) return true
-  return s === 'open' || s === 'pending fktk' || s === 're-open' || s === 'reopen'
+  return (
+    s === 'open' ||
+    s === 'pending fktk' ||
+    s === 're-open' ||
+    s === 'reopen' ||
+    s === 'internal movement'
+  )
 }
 
 /** Closed Positions card: Close | Internal Movement */
@@ -90,16 +105,6 @@ const getCurrentWeekRange = () => {
   endOfWeek.setDate(startOfWeek.getDate() + 6)
   endOfWeek.setHours(23, 59, 59, 999)
   return { startOfWeek, endOfWeek }
-}
-
-const getMonthRange = () => {
-  const startOfMonth = new Date()
-  startOfMonth.setDate(1)
-  startOfMonth.setHours(0, 0, 0, 0)
-  const endOfMonth = new Date(startOfMonth)
-  endOfMonth.setMonth(endOfMonth.getMonth() + 1)
-  endOfMonth.setMilliseconds(endOfMonth.getMilliseconds() - 1)
-  return { startOfMonth, endOfMonth }
 }
 
 const computePositionStatusByLocation = (positions: any[]): PositionStatusByLocation[] => {
@@ -175,49 +180,12 @@ const computeSlaByLocation = (positions: any[]): SLALocation[] => {
   return Object.values(data) as SLALocation[]
 }
 
-const getInterviewsThisWeekItems = (positions: any[]): DashboardListItem[] => {
-  const { startOfWeek, endOfWeek } = getCurrentWeekRange()
-  const items: DashboardListItem[] = []
-
-  const statusMatches = (raw: string) => {
-    const s = (raw || '').trim().toLowerCase()
-    return s === 'interview scheduled' || s === 'interviewed'
-  }
-
-  positions.forEach((position) => {
-    (position?.appliedCandidates || []).forEach((candidate: any) => {
-      if (!statusMatches(candidate?.status || '')) return
-      ;(candidate?.interviews || []).forEach((interview: any) => {
-        const date = parseDateValue(interview?.date || interview?.scheduledAt)
-        if (!date) return
-        if (isWithinRange(date, startOfWeek, endOfWeek)) {
-          const subtitleParts = [position?.title || position?.position || 'Unknown Position']
-          if (position?.department) {
-            subtitleParts.push(position.department)
-          }
-          items.push({
-            id: position?.id,
-            kind: position?.id ? ('fptk' as const) : undefined,
-            title: candidate?.fullName || candidate?.name || 'Unknown Candidate',
-            subtitle: subtitleParts.filter(Boolean).join(' • '),
-            meta: `${date.toLocaleDateString()}${interview?.time ? ` at ${interview.time}` : ''}`,
-          })
-        }
-      })
-    })
-  })
-
-  return items
-}
-
-const getHiredThisMonthItems = (positions: any[]): DashboardListItem[] => {
-  const { startOfMonth, endOfMonth } = getMonthRange()
+const getHiredInRangeItems = (positions: any[], range: DateRange): DashboardListItem[] => {
   return positions
     .filter((position) => {
       const s = normalizeUiCurrentStatus(position?.currentStatus || position?.status)
       if (s !== 'close') return false
-      const date = parseDateValue(position?.updatedAt)
-      return date ? isWithinRange(date, startOfMonth, endOfMonth) : false
+      return itemTimestampInRange(position?.updatedAt, range)
     })
     .map((position) => {
       const date = parseDateValue(position?.updatedAt)
@@ -229,6 +197,23 @@ const getHiredThisMonthItems = (positions: any[]): DashboardListItem[] => {
         meta: date ? `Updated ${date.toLocaleDateString()}` : undefined,
       }
     })
+}
+
+const asUpperStatus = (value: any) => (value || '').toString().trim().toUpperCase()
+
+const appActivityTs = (a: { updatedAt?: string | null; appliedAt?: string | null } | null | undefined) =>
+  a?.updatedAt || a?.appliedAt
+const fptkActivityTs = (p: { updatedAt?: string | null; createdAt?: string | null } | null | undefined) =>
+  p?.updatedAt || p?.createdAt
+
+const appInGroupInRange = (a: any, group: Set<string>, range: DateRange) =>
+  group.has(asUpperStatus(a?.status)) && itemTimestampInRange(appActivityTs(a), range)
+
+const APPLICATION_STATUS_GROUPS = {
+  totalCandidate: new Set(['SUBMITTED', 'SCREENING', 'OFFER_REJECTED']),
+  interview: new Set(['INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'TECHNICAL_TEST', 'REJECTED']),
+  offeringStage: new Set(['OFFER_PROPOSED', 'OFFER_APPROVED', 'OFFER_ACCEPTED', 'WITHDRAWN']),
+  mcu: new Set(['MEDICAL_CHECKUP_COMPLETED']),
 }
 
 const buildApplicationInsights = (
@@ -306,6 +291,8 @@ export default function Dashboard() {
   const [detailQuery, setDetailQuery] = useState('')
   const [baseStats, setBaseStats] = useState<Partial<DashboardStats> | null>(null)
   const [allPositions, setAllPositions] = useState<any[]>([])
+  const [dashboardApplications, setDashboardApplications] = useState<any[]>([])
+  const [fptkListHydrated, setFptkListHydrated] = useState(false)
   const [priorityFilter, setPriorityFilter] = useState<typeof PRIORITY_FILTERS[number]>('ALL')
   const [interviewDetailItems, setInterviewDetailItems] = useState<DashboardListItem[]>([])
   const [isLoadingApplicationInsights, setIsLoadingApplicationInsights] = useState(false)
@@ -317,115 +304,349 @@ export default function Dashboard() {
   const [openPositionsList, setOpenPositionsList] = useState<any[]>([])
   const openPositionsLoadedOnceRef = useRef(false)
 
-const filteredPositions = useMemo(
-  () => filterPositionsByPriority(allPositions, priorityFilter),
-  [allPositions, priorityFilter]
-)
-const openPositionItems = useMemo<DashboardListItem[]>(() => {
-  return filteredPositions
-    .filter((position) => isOpenCurrentStatusLabel(position?.currentStatus || position?.status))
-    .map((position) => ({
-      id: position?.id,
-      kind: 'fptk' as const,
-      title: position?.title || position?.position || 'Unknown Position',
-      subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
-      meta: position?.currentStatus || position?.status || 'N/A',
-    }))
-}, [filteredPositions])
+  const TOTAL_CANDIDATES_MODAL_PAGE_SIZE = 100
+  const [totalCandidatesModal, setTotalCandidatesModal] = useState<{
+    page: number
+    totalPages: number
+    total: number
+    items: DashboardListItem[]
+    loading: boolean
+  } | null>(null)
+  const [totalCandidatesQuery, setTotalCandidatesQuery] = useState('')
 
-const closedPositionItems = useMemo<DashboardListItem[]>(() => {
-  return filteredPositions
-    .filter((position) => isClosedCurrentStatusLabel(position?.currentStatus || position?.status))
-    .map((position) => ({
-      id: position?.id,
-      kind: 'fptk' as const,
-      title: position?.title || position?.position || 'Unknown Position',
-      subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
-      meta: position?.currentStatus || position?.status || 'N/A',
-    }))
-}, [filteredPositions])
-
-const holdPositionItems = useMemo<DashboardListItem[]>(() => {
-  return filteredPositions
-    .filter((position) => isHoldCurrentStatusLabel(position?.currentStatus || position?.status))
-    .map((position) => ({
-      id: position?.id,
-      kind: 'fptk' as const,
-      title: position?.title || position?.position || 'Unknown Position',
-      subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
-      meta: position?.currentStatus || position?.status || 'N/A',
-    }))
-}, [filteredPositions])
-const interviewsThisWeekItems = useMemo(
-  () => getInterviewsThisWeekItems(filteredPositions),
-  [filteredPositions]
-)
-const hiredThisMonthItems = useMemo(
-  () => getHiredThisMonthItems(filteredPositions),
-  [filteredPositions]
-)
-const combinedLocations = useMemo(() => {
-  const locationsSet = new Set<string>()
-
-  dashboardStats.positionStatusByLocation.forEach((item) => {
-    if (item.location) locationsSet.add(item.location)
+  const [timeMode, setTimeMode] = useState<DashboardTimeMode>('month')
+  const [weekValue, setWeekValue] = useState(() => toWeekInputValue())
+  const [monthValue, setMonthValue] = useState(() => toMonthInputValue())
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date()
+    const y = d.getFullYear()
+    const m = d.getMonth()
+    return `${y}-${String(m + 1).padStart(2, '0')}-01`
+  })
+  const [customEnd, setCustomEnd] = useState(() => {
+    const d = new Date()
+    const y = d.getFullYear()
+    const m = d.getMonth()
+    const last = new Date(y, m + 1, 0)
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`
   })
 
-  dashboardStats.openPositionProgress.forEach((item: any) => {
-    if (item.areaDetail) locationsSet.add(item.areaDetail)
-  })
+  const periodBounds = useMemo(
+    () => getDashboardPeriodBounds(timeMode, { weekValue, monthValue, customStart, customEnd }),
+    [timeMode, weekValue, monthValue, customStart, customEnd]
+  )
 
-  dashboardStats.slaByLocation.forEach((item: any) => {
-    if (item.areaDetail) locationsSet.add(item.areaDetail)
-  })
+  const activePeriod = useMemo(() => {
+    if (periodBounds) return periodBounds
+    return getDashboardPeriodBounds('month', {
+      weekValue: toWeekInputValue(),
+      monthValue: toMonthInputValue(),
+      customStart: '',
+      customEnd: '',
+    }) as NonNullable<ReturnType<typeof getDashboardPeriodBounds>>
+  }, [periodBounds])
 
-  return Array.from(locationsSet).sort()
-}, [dashboardStats.positionStatusByLocation, dashboardStats.openPositionProgress, dashboardStats.slaByLocation])
+  const filteredPositions = useMemo(
+    () => filterPositionsByPriority(allPositions, priorityFilter),
+    [allPositions, priorityFilter]
+  )
 
-  const stats = [
-    {
-      name: 'Total Candidates',
-      value: dashboardStats.totalCandidates.toString(),
-      icon: UsersIcon,
-      change: '+12%',
-      changeType: 'positive',
-    },
-    {
-      name: 'Open Positions',
-      value: dashboardStats.openPositions.toString(),
-      icon: BriefcaseIcon,
-      change: '+3%',
-      changeType: 'positive',
-    },
-    {
-      name: 'Closed Positions',
-      value: dashboardStats.closedPositions.toString(),
-      icon: BriefcaseIcon,
-      change: '+0%',
-      changeType: 'positive',
-    },
-    {
-      name: 'Hold Positions',
-      value: dashboardStats.holdPositions.toString(),
-      icon: BriefcaseIcon,
-      change: '+0%',
-      changeType: 'positive',
-    },
-    {
-      name: 'Interviews This Week',
-      value: dashboardStats.interviewsThisWeek.toString(),
-      icon: CalendarDaysIcon,
-      change: '-2%',
-      changeType: 'negative',
-    },
-    {
-      name: 'Hired This Month',
-      value: dashboardStats.hiredThisMonth.toString(),
-      icon: DocumentTextIcon,
-      change: '+15%',
-      changeType: 'positive',
-    },
-  ]
+  const openPositionItems = useMemo<DashboardListItem[]>(() => {
+    const range = activePeriod.current
+    return filteredPositions
+      .filter(
+        (position) =>
+          isOpenCurrentStatusLabel(position?.currentStatus || position?.status) &&
+          itemTimestampInRange(fptkActivityTs(position), range)
+      )
+      .map((position) => ({
+        id: position?.id,
+        kind: 'fptk' as const,
+        title: position?.title || position?.position || 'Unknown Position',
+        subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
+        meta: position?.currentStatus || position?.status || 'N/A',
+      }))
+  }, [filteredPositions, activePeriod])
+
+  const closedPositionItems = useMemo<DashboardListItem[]>(() => {
+    return filteredPositions
+      .filter((position) => isClosedCurrentStatusLabel(position?.currentStatus || position?.status))
+      .map((position) => ({
+        id: position?.id,
+        kind: 'fptk' as const,
+        title: position?.title || position?.position || 'Unknown Position',
+        subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
+        meta: position?.currentStatus || position?.status || 'N/A',
+      }))
+  }, [filteredPositions])
+
+  const holdPositionItems = useMemo<DashboardListItem[]>(() => {
+    return filteredPositions
+      .filter((position) => isHoldCurrentStatusLabel(position?.currentStatus || position?.status))
+      .map((position) => ({
+        id: position?.id,
+        kind: 'fptk' as const,
+        title: position?.title || position?.position || 'Unknown Position',
+        subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
+        meta: position?.currentStatus || position?.status || 'N/A',
+      }))
+  }, [filteredPositions])
+
+  const hiredInPeriodItems = useMemo(
+    () => getHiredInRangeItems(filteredPositions, activePeriod.current),
+    [filteredPositions, activePeriod]
+  )
+
+  const applicationsScoped = useMemo(() => {
+    if (!dashboardApplications.length) return []
+    if (!fptkListHydrated) return dashboardApplications
+    const idSet = new Set(filteredPositions.map((p: any) => p?.id).filter(Boolean))
+    if (idSet.size === 0) return []
+    return dashboardApplications.filter((a: any) => a.fptkId && idSet.has(a.fptkId))
+  }, [dashboardApplications, filteredPositions, fptkListHydrated])
+
+  const mapApplicationToDetailItem = (application: any): DashboardListItem => {
+    const candidateName =
+      `${application?.candidate?.user?.firstName || ''} ${application?.candidate?.user?.lastName || ''}`.trim() ||
+      application?.candidate?.fullName ||
+      'Unknown Candidate'
+    const positionTitle =
+      application?.fptk?.positionTitle || application?.fptk?.position || 'Unknown Position'
+    const department = application?.fptk?.department || application?.candidate?.user?.division || 'N/A'
+    return {
+      id: application?.fptkId || application?.id,
+      kind: application?.fptkId ? ('fptk' as const) : undefined,
+      title: candidateName,
+      subtitle: `${positionTitle} • ${department}`,
+      meta: asUpperStatus(application?.status).replace(/_/g, ' '),
+    }
+  }
+
+  const totalCandidateItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) =>
+          appInGroupInRange(a, APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.current)
+        )
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod]
+  )
+
+  const interviewItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) => appInGroupInRange(a, APPLICATION_STATUS_GROUPS.interview, activePeriod.current))
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod]
+  )
+
+  const offeringStageItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) =>
+          appInGroupInRange(a, APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.current)
+        )
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod]
+  )
+
+  const mcuItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) => appInGroupInRange(a, APPLICATION_STATUS_GROUPS.mcu, activePeriod.current))
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod]
+  )
+
+  const countOpenFptkInRange = useCallback(
+    (range: DateRange) =>
+      filteredPositions.filter(
+        (p) =>
+          isOpenCurrentStatusLabel(p?.currentStatus || p?.status) && itemTimestampInRange(fptkActivityTs(p), range)
+      ).length,
+    [filteredPositions]
+  )
+
+  const countAppGroupInRange = useCallback(
+    (group: Set<string>, range: DateRange) =>
+      applicationsScoped.filter((a: any) => appInGroupInRange(a, group, range)).length,
+    [applicationsScoped]
+  )
+
+  const countHiredCloseInRange = useCallback(
+    (range: DateRange) =>
+      filteredPositions.filter(
+        (p) =>
+          normalizeUiCurrentStatus(p?.currentStatus || p?.status) === 'close' &&
+          itemTimestampInRange(fptkActivityTs(p), range)
+      ).length,
+    [filteredPositions]
+  )
+
+  const wowOpenPositions = useMemo(
+    () =>
+      periodOverPeriodChange(
+        countOpenFptkInRange(activePeriod.current),
+        countOpenFptkInRange(activePeriod.previous)
+      ),
+    [countOpenFptkInRange, activePeriod]
+  )
+
+  const wowTotalCandidateStatus = useMemo(
+    () =>
+      periodOverPeriodChange(
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.current),
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.previous)
+      ),
+    [countAppGroupInRange, activePeriod]
+  )
+
+  const wowInterviewStatus = useMemo(
+    () =>
+      periodOverPeriodChange(
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.interview, activePeriod.current),
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.interview, activePeriod.previous)
+      ),
+    [countAppGroupInRange, activePeriod]
+  )
+
+  const wowOfferingStatus = useMemo(
+    () =>
+      periodOverPeriodChange(
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.current),
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.previous)
+      ),
+    [countAppGroupInRange, activePeriod]
+  )
+
+  const wowMcuStatus = useMemo(
+    () =>
+      periodOverPeriodChange(
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.mcu, activePeriod.current),
+        countAppGroupInRange(APPLICATION_STATUS_GROUPS.mcu, activePeriod.previous)
+      ),
+    [countAppGroupInRange, activePeriod]
+  )
+
+  const wowHiredRolling = useMemo(
+    () =>
+      periodOverPeriodChange(
+        countHiredCloseInRange(activePeriod.current),
+        countHiredCloseInRange(activePeriod.previous)
+      ),
+    [countHiredCloseInRange, activePeriod]
+  )
+
+  const openPositionsHeadline = useMemo(
+    () => openPositionItems.length,
+    [openPositionItems.length]
+  )
+
+  const totalCandidateHeadline = useMemo(
+    () => totalCandidateItems.length,
+    [totalCandidateItems.length]
+  )
+
+  const interviewHeadline = useMemo(
+    () => interviewItems.length,
+    [interviewItems.length]
+  )
+
+  const offeringStageHeadline = useMemo(
+    () => offeringStageItems.length,
+    [offeringStageItems.length]
+  )
+
+  const mcuHeadline = useMemo(
+    () => mcuItems.length,
+    [mcuItems.length]
+  )
+
+  const hiredThisMonthHeadline = useMemo(
+    () => hiredInPeriodItems.length,
+    [hiredInPeriodItems.length]
+  )
+
+  const customRangeInvalid = timeMode === 'custom' && !periodBounds
+
+  const combinedLocations = useMemo(() => {
+    const locationsSet = new Set<string>()
+
+    dashboardStats.positionStatusByLocation.forEach((item) => {
+      if (item.location) locationsSet.add(item.location)
+    })
+
+    dashboardStats.openPositionProgress.forEach((item: any) => {
+      if (item.areaDetail) locationsSet.add(item.areaDetail)
+    })
+
+    dashboardStats.slaByLocation.forEach((item: any) => {
+      if (item.areaDetail) locationsSet.add(item.areaDetail)
+    })
+
+    return Array.from(locationsSet).sort()
+  }, [dashboardStats.positionStatusByLocation, dashboardStats.openPositionProgress, dashboardStats.slaByLocation])
+
+  const stats = useMemo(
+    () => [
+      {
+        name: 'Total Candidates',
+        value: openPositionsHeadline.toString(),
+        icon: UsersIcon,
+        change: wowOpenPositions.formattedChange,
+        changeType: wowOpenPositions.sentiment,
+      },
+      {
+        name: 'Open Positions',
+        value: totalCandidateHeadline.toString(),
+        icon: BriefcaseIcon,
+        change: wowTotalCandidateStatus.formattedChange,
+        changeType: wowTotalCandidateStatus.sentiment,
+      },
+      {
+        name: 'Interview',
+        value: interviewHeadline.toString(),
+        icon: BriefcaseIcon,
+        change: wowInterviewStatus.formattedChange,
+        changeType: wowInterviewStatus.sentiment,
+      },
+      {
+        name: 'Offering Stage',
+        value: offeringStageHeadline.toString(),
+        icon: BriefcaseIcon,
+        change: wowOfferingStatus.formattedChange,
+        changeType: wowOfferingStatus.sentiment,
+      },
+      {
+        name: 'MCU',
+        value: mcuHeadline.toString(),
+        icon: CalendarDaysIcon,
+        change: wowMcuStatus.formattedChange,
+        changeType: wowMcuStatus.sentiment,
+      },
+      {
+        name: 'Hired',
+        value: hiredThisMonthHeadline.toString(),
+        icon: DocumentTextIcon,
+        change: wowHiredRolling.formattedChange,
+        changeType: wowHiredRolling.sentiment,
+      },
+    ],
+    [
+      openPositionsHeadline,
+      wowOpenPositions,
+      totalCandidateHeadline,
+      wowTotalCandidateStatus,
+      interviewHeadline,
+      wowInterviewStatus,
+      offeringStageHeadline,
+      wowOfferingStatus,
+      mcuHeadline,
+      wowMcuStatus,
+      hiredThisMonthHeadline,
+      wowHiredRolling,
+    ]
+  )
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -440,21 +661,14 @@ const combinedLocations = useMemo(() => {
 useEffect(() => {
   if (!baseStats) return
 
-  const interviewsCount =
-    interviewDetailItems.length ||
-    interviewsThisWeekItems.length ||
-    baseStats.interviewsThisWeek ||
-    0
-  const hiredCount = hiredThisMonthItems.length || baseStats.hiredThisMonth || 0
-
   setDashboardStats({
-    totalCandidates: baseStats.totalCandidates ?? 0,
+    totalCandidates: openPositionsHeadline,
     activeApplications: baseStats.activeApplications ?? 0,
-    openPositions: baseStats.openPositions ?? openPositionItems.length,
-    closedPositions: baseStats.closedPositions ?? closedPositionItems.length,
-    holdPositions: baseStats.holdPositions ?? holdPositionItems.length,
-    interviewsThisWeek: interviewsCount,
-    hiredThisMonth: hiredCount,
+    openPositions: totalCandidateHeadline,
+    closedPositions: interviewHeadline,
+    holdPositions: offeringStageHeadline,
+    interviewsThisWeek: mcuHeadline,
+    hiredThisMonth: hiredThisMonthHeadline,
     recentActivity: baseStats.recentActivity ?? [],
     positionStatusByLocation: (baseStats as any).positionStatusByLocation || computePositionStatusByLocation(filteredPositions),
     openPositionProgress: (baseStats as any).openPositionProgress || computeOpenPositionProgress(filteredPositions),
@@ -463,12 +677,12 @@ useEffect(() => {
 }, [
   baseStats,
   filteredPositions,
-  openPositionItems.length,
-  closedPositionItems.length,
-  holdPositionItems.length,
-  interviewsThisWeekItems.length,
-  hiredThisMonthItems.length,
-  interviewDetailItems.length,
+  openPositionsHeadline,
+  totalCandidateHeadline,
+  interviewHeadline,
+  offeringStageHeadline,
+  mcuHeadline,
+  hiredThisMonthHeadline,
 ])
 
   const fetchOpenPositions = async (query: string) => {
@@ -582,6 +796,37 @@ useEffect(() => {
     return positions
   }
 
+  const fetchAllApplicationsForDashboard = async (): Promise<any[]> => {
+    if (!isAuthenticated) return []
+    const limit = 100
+    const maxPages = 50
+    let page = 1
+    let hasMore = true
+    const rows: any[] = []
+
+    while (hasMore && page <= maxPages) {
+      const response = await ApplicationsAPI.getAll({}, { page, limit })
+      const data = Array.isArray(response?.data) ? response.data : []
+      if (data.length === 0) break
+      rows.push(...data)
+      const totalPages = response?.pagination?.totalPages
+      if (totalPages) {
+        hasMore = page < totalPages
+      } else {
+        hasMore = data.length === limit
+      }
+      page += 1
+    }
+
+    if (page > maxPages) {
+      console.warn(
+        `fetchAllApplicationsForDashboard: Reached max pages (${maxPages}); week-over-week may be incomplete.`
+      )
+    }
+
+    return rows
+  }
+
   const loadDashboardData = async () => {
     if (!isAuthenticated) return
     try {
@@ -592,43 +837,47 @@ useEffect(() => {
       console.log('Open Position Progress:', stats.openPositionProgress)
       console.log('SLA by Location:', stats.slaByLocation)
       
-      // Fallback compute open positions if API returns zero
-      let openPositionsComputed = stats.openPositions ?? 0
-      if (!openPositionsComputed || openPositionsComputed === 0) {
-        if (typeof window !== 'undefined') {
-          try {
-            const jobPostingsData = localStorage.getItem('jobPostings')
-            const jobPostings = jobPostingsData ? JSON.parse(jobPostingsData) : []
-            openPositionsComputed = jobPostings.filter((j: any) => j.status !== 'On Boarding' && j.status !== 'Cancelled').length
-          } catch (error) {
-            console.warn('Could not load positions from localStorage:', error)
-          }
-        }
-      }
-
+      // Trust API counts (including 0). Do not fall back to localStorage when the server
+      // correctly returns zero — stale jobPostings in localStorage caused Open Positions to
+      // show hundreds after all positions were deleted.
       const base = {
-        totalCandidates: stats.totalCandidates || 0,
-        activeApplications: stats.activeApplications || 0,
-        recentActivity: stats.recentActivity || [],
-        openPositions: stats.openPositions || 0,
+        totalCandidates: stats.totalCandidates ?? 0,
+        activeApplications: stats.activeApplications ?? 0,
+        recentActivity: stats.recentActivity ?? [],
+        openPositions: stats.openPositions ?? 0,
         closedPositions: stats.closedPositions ?? 0,
         holdPositions: stats.holdPositions ?? 0,
         interviewsThisWeek: stats.interviewsThisWeek ?? 0,
         hiredThisMonth: stats.hiredThisMonth ?? 0,
-        positionStatusByLocation: stats.positionStatusByLocation || [],
-        openPositionProgress: stats.openPositionProgress || [],
-        slaByLocation: stats.slaByLocation || [],
+        positionStatusByLocation: stats.positionStatusByLocation ?? [],
+        openPositionProgress: stats.openPositionProgress ?? [],
+        slaByLocation: stats.slaByLocation ?? [],
       }
 
       console.log('Dashboard base stats:', base)
       console.log('API closedPositions:', stats.closedPositions)
       console.log('API holdPositions:', stats.holdPositions)
 
-      setBaseStats({
-        ...base,
-        openPositions: openPositionsComputed || stats.openPositions || stats.activeFPTKs || stats.totalFPTKs || 0,
-      })
+      setBaseStats(base)
+      setFptkListHydrated(false)
       setAllPositions([])
+      setDashboardApplications([])
+
+      Promise.allSettled([fetchAllFptksForDashboard(), fetchAllApplicationsForDashboard()]).then(
+        (results) => {
+          const pos = results[0].status === 'fulfilled' ? results[0].value : []
+          const apps = results[1].status === 'fulfilled' ? results[1].value : []
+          if (results[0].status === 'rejected') {
+            console.error('fetchAllFptksForDashboard failed:', results[0].reason)
+          }
+          if (results[1].status === 'rejected') {
+            console.error('fetchAllApplicationsForDashboard failed:', results[1].reason)
+          }
+          setAllPositions(pos)
+          setDashboardApplications(apps)
+          setFptkListHydrated(true)
+        }
+      )
     } catch (error: any) {
       console.error('Error loading dashboard data:', error)
       console.error('Error details:', error.response?.data || error.message)
@@ -685,7 +934,62 @@ useEffect(() => {
         recentActivity,
       }
       setBaseStats(fallbackBase)
+      setFptkListHydrated(false)
       setAllPositions(jobPostings)
+      setDashboardApplications([])
+
+      Promise.allSettled([fetchAllFptksForDashboard(), fetchAllApplicationsForDashboard()]).then(
+        (results) => {
+          const pos = results[0].status === 'fulfilled' ? results[0].value : []
+          const apps = results[1].status === 'fulfilled' ? results[1].value : []
+          setAllPositions(pos.length ? pos : jobPostings)
+          setDashboardApplications(apps)
+          setFptkListHydrated(true)
+        }
+      )
+    }
+  }
+
+  const mapApiCandidatesToDashboardItems = (rows: any[]): DashboardListItem[] =>
+    (rows || []).map((c: any) => ({
+      id: c.id,
+      kind: 'candidate' as const,
+      title: `${c.user?.firstName || ''} ${c.user?.lastName || ''}`.trim() || 'Unknown',
+      subtitle: c.user?.email || 'No email',
+      meta: c._count?.applications ? `${c._count.applications} application(s)` : 'No applications',
+    }))
+
+  const loadTotalCandidatesModalPage = async (page: number) => {
+    setTotalCandidatesModal((prev) =>
+      prev
+        ? { ...prev, loading: true }
+        : { page: 1, totalPages: 1, total: 0, items: [], loading: true }
+    )
+    try {
+      const response = await CandidatesAPI.getAll(
+        { sortBy: 'name' },
+        { page, limit: TOTAL_CANDIDATES_MODAL_PAGE_SIZE }
+      )
+      const raw = response.data || []
+      const p = response.pagination || {}
+      const totalPages = Math.max(1, p.totalPages ?? 1)
+      const total = typeof p.total === 'number' ? p.total : raw.length
+      setTotalCandidatesModal({
+        page: p.page ?? page,
+        totalPages,
+        total,
+        items: mapApiCandidatesToDashboardItems(raw),
+        loading: false,
+      })
+    } catch (error: any) {
+      console.error('Error loading candidates list:', error)
+      setTotalCandidatesModal({
+        page: 1,
+        totalPages: 1,
+        total: 0,
+        items: [],
+        loading: false,
+      })
     }
   }
 
@@ -693,12 +997,16 @@ useEffect(() => {
     if (!id) return
     setDetailModal(null)
     setOpenPositionsModalOpen(false)
+    setTotalCandidatesModal(null)
+    setTotalCandidatesQuery('')
     router.push(`/fptk?edit=${encodeURIComponent(id)}`)
   }
 
   const openCandidateView = (id?: string) => {
     if (!id) return
     setDetailModal(null)
+    setTotalCandidatesModal(null)
+    setTotalCandidatesQuery('')
     router.push(`/candidates?view=${encodeURIComponent(id)}`)
   }
 
@@ -757,6 +1065,78 @@ useEffect(() => {
           </div>
         </div>
 
+        <div className="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+            <div className="inline-flex rounded-md shadow-sm">
+                {(['week', 'month', 'custom'] as const).map((m, index, arr) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setTimeMode(m)}
+                    className={`px-3 py-1.5 border text-sm font-medium capitalize ${
+                      timeMode === m
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    } ${index === 0 ? 'rounded-l-md' : ''} ${
+                      index === arr.length - 1 ? 'rounded-r-md' : ''
+                    } ${index > 0 ? '-ml-px' : ''}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {timeMode === 'week' && (
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span className="whitespace-nowrap">Week</span>
+                  <input
+                    type="week"
+                    value={weekValue}
+                    onChange={(e) => setWeekValue(e.target.value)}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+              )}
+              {timeMode === 'month' && (
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <span className="whitespace-nowrap">Month</span>
+                  <input
+                    type="month"
+                    value={monthValue}
+                    onChange={(e) => setMonthValue(e.target.value)}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+              )}
+              {timeMode === 'custom' && (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+                  <label className="flex items-center gap-1">
+                    From
+                    <input
+                      type="date"
+                      value={customStart}
+                      onChange={(e) => setCustomStart(e.target.value)}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1">
+                    To
+                    <input
+                      type="date"
+                      value={customEnd}
+                      onChange={(e) => setCustomEnd(e.target.value)}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                </div>
+              )}
+          </div>
+          {customRangeInvalid ? (
+            <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              Invalid or incomplete custom range. Showing current month until the range is valid.
+            </p>
+          ) : null}
+        </div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {stats.map((item) => (
@@ -764,11 +1144,23 @@ useEffect(() => {
               key={item.name}
               className="text-left relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:px-6 sm:py-6 hover:ring-2 hover:ring-indigo-500 focus:outline-none"
               onClick={async () => {
-                if (item.name === 'Open Positions') {
+                if (item.name === 'Total Candidates') {
                   setOpenPositionsModalOpen(true)
                   if (!openPositionsLoadedOnceRef.current) {
                     await fetchOpenPositions('')
                   }
+                  return
+                }
+                if (item.name === 'Open Positions') {
+                  setTotalCandidatesQuery('')
+                  setTotalCandidatesModal({
+                    page: 1,
+                    totalPages: 1,
+                    total: 0,
+                    items: [],
+                    loading: true,
+                  })
+                  await loadTotalCandidatesModalPage(1)
                   return
                 }
                 setDetailModal({ title: item.name, items: [] })
@@ -783,44 +1175,19 @@ useEffect(() => {
                     meta: position?.currentStatus || position?.status || 'N/A',
                   })
 
-                  if (item.name === 'Total Candidates') {
-                    const response = await CandidatesAPI.getAll({}, { page: 1, limit: 100 })
-                    const candidates = response.data || []
-                    items = candidates.map((c: any) => ({
-                      id: c.id,
-                      kind: 'candidate' as const,
-                      title: `${c.user?.firstName || ''} ${c.user?.lastName || ''}`.trim() || 'Unknown',
-                      subtitle: c.user?.email || 'No email',
-                      meta: c._count?.applications ? `${c._count.applications} application(s)` : 'No applications',
-                    }))
-                  } else if (item.name === 'Open Positions') {
-                    items = openPositionItems
-                  } else if (item.name === 'Closed Positions') {
+                  if (item.name === 'Interview') {
+                    items = interviewItems
+                  } else if (item.name === 'Offering Stage') {
+                    items = offeringStageItems
+                  } else if (item.name === 'MCU') {
+                    items = mcuItems
+                  } else                 if (item.name === 'Hired') {
                     const pos = await fetchAllFptksForDashboard()
                     setAllPositions(pos)
-                    items = filterPositionsByPriority(pos, priorityFilter)
-                      .filter((p: any) => isClosedCurrentStatusLabel(p?.currentStatus || p?.status))
-                      .map(mapPositionRow)
-                  } else if (item.name === 'Hold Positions') {
-                    const pos = await fetchAllFptksForDashboard()
-                    setAllPositions(pos)
-                    items = filterPositionsByPriority(pos, priorityFilter)
-                      .filter((p: any) => isHoldCurrentStatusLabel(p?.currentStatus || p?.status))
-                      .map(mapPositionRow)
-                  } else if (item.name === 'Interviews This Week') {
-                    const pos = await fetchAllFptksForDashboard()
-                    setAllPositions(pos)
-                    const local = getInterviewsThisWeekItems(filterPositionsByPriority(pos, priorityFilter))
-                    if (local.length > 0) {
-                      items = local
-                    } else {
-                      const fromApi = await loadApplicationInsights()
-                      items = fromApi.length ? fromApi : local
-                    }
-                  } else if (item.name === 'Hired This Month') {
-                    const pos = await fetchAllFptksForDashboard()
-                    setAllPositions(pos)
-                    items = getHiredThisMonthItems(filterPositionsByPriority(pos, priorityFilter))
+                    items = getHiredInRangeItems(
+                      filterPositionsByPriority(pos, priorityFilter),
+                      activePeriod.current
+                    )
                   }
 
                   if (!items.length) {
@@ -852,7 +1219,11 @@ useEffect(() => {
                 <p className="text-2xl font-semibold text-gray-900 underline decoration-dotted">{item.value}</p>
                 <p
                   className={`ml-2 flex items-baseline text-sm font-semibold ${
-                    item.changeType === 'positive' ? 'text-green-600' : 'text-red-600'
+                    item.changeType === 'positive'
+                      ? 'text-green-600'
+                      : item.changeType === 'negative'
+                        ? 'text-red-600'
+                        : 'text-gray-500'
                   }`}
                 >
                   {item.change}
@@ -940,6 +1311,114 @@ useEffect(() => {
                 >
                   Close
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {totalCandidatesModal && (
+          <div
+            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+            onClick={() => {
+              setTotalCandidatesModal(null)
+              setTotalCandidatesQuery('')
+            }}
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b flex items-center justify-between gap-3 shrink-0">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Total Candidates</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Sorted A–Z by name · {TOTAL_CANDIDATES_MODAL_PAGE_SIZE} per page
+                  </p>
+                </div>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    setTotalCandidatesModal(null)
+                    setTotalCandidatesQuery('')
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="px-6 py-3 border-b shrink-0">
+                <input
+                  value={totalCandidatesQuery}
+                  onChange={(e) => setTotalCandidatesQuery(e.target.value)}
+                  placeholder="Filter this page by name or email…"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="px-6 py-4 overflow-auto flex-1 min-h-0">
+                {totalCandidatesModal.loading ? (
+                  <div className="text-sm text-gray-500 py-8 text-center">Loading…</div>
+                ) : (
+                  <ul className="divide-y">
+                    {totalCandidatesModal.items
+                      .filter((it) => matchesQuery(it, totalCandidatesQuery))
+                      .map((it: DashboardListItem, idx: number) => (
+                        <li key={it.id || idx} className="py-3">
+                          <button
+                            className="w-full text-left"
+                            onClick={() => openCandidateView(it.id)}
+                          >
+                            <div className="text-sm font-medium text-indigo-700 hover:underline">{it.title}</div>
+                            {it.subtitle && <div className="text-sm text-gray-600">{it.subtitle}</div>}
+                            {it.meta && <div className="text-xs text-gray-500 mt-1">{it.meta}</div>}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+                {!totalCandidatesModal.loading &&
+                  totalCandidatesModal.items.filter((it) => matchesQuery(it, totalCandidatesQuery)).length ===
+                    0 && (
+                    <div className="text-sm text-gray-500 py-4">No candidates on this page match your filter.</div>
+                  )}
+              </div>
+
+              <div className="px-6 py-4 border-t flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <p className="text-xs text-gray-500">
+                  Page {totalCandidatesModal.page} of {totalCandidatesModal.totalPages} ·{' '}
+                  {totalCandidatesModal.total} total
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={totalCandidatesModal.loading || totalCandidatesModal.page <= 1}
+                    onClick={() => loadTotalCandidatesModalPage(totalCandidatesModal.page - 1)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      totalCandidatesModal.loading ||
+                      totalCandidatesModal.page >= totalCandidatesModal.totalPages
+                    }
+                    onClick={() => loadTotalCandidatesModalPage(totalCandidatesModal.page + 1)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTotalCandidatesModal(null)
+                      setTotalCandidatesQuery('')
+                    }}
+                    className="px-3 py-1.5 text-sm rounded-md border text-gray-700 bg-white hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>
