@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const bcrypt = require('bcryptjs');
 const { encrypt, decrypt } = require('../utils/encryption');
 const logger = require('../utils/logger');
+const { buildTokenizedSearch } = require('../utils/search');
 
 function parseFormDataDiri(candidate) {
   if (candidate && candidate.formDataDiri) {
@@ -905,27 +906,30 @@ async function searchCandidates(filters, pagination, user = null) {
     // SUPER_ADMIN, TA_TEAM, and other roles see all candidates (no additional filtering)
   }
 
-  if (filters.search) {
-    const searchConditions = [
-      { user: { firstName: { contains: filters.search, mode: 'insensitive' } } },
-      { user: { lastName: { contains: filters.search, mode: 'insensitive' } } },
-      { user: { email: { contains: filters.search, mode: 'insensitive' } } },
-    ];
+  const tokenizedSearch = buildTokenizedSearch(filters, (token) => ([
+    { user: { firstName: { contains: token, mode: 'insensitive' } } },
+    { user: { lastName: { contains: token, mode: 'insensitive' } } },
+    { user: { email: { contains: token, mode: 'insensitive' } } },
+  ]));
+
+  if (tokenizedSearch) {
     // If where.OR already exists (from role filtering), combine with AND
     if (where.OR) {
       where.AND = [
         { OR: where.OR },
-        { OR: searchConditions }
+        tokenizedSearch,
       ];
       delete where.OR;
     } else if (where.applications) {
       where.AND = [
         { applications: where.applications },
-        { OR: searchConditions }
+        tokenizedSearch,
       ];
       delete where.applications;
+    } else if (tokenizedSearch.AND) {
+      where.AND = tokenizedSearch.AND;
     } else {
-      where.OR = searchConditions;
+      where.OR = tokenizedSearch.OR;
     }
   }
 

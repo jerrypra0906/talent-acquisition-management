@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const { $Enums } = require('@prisma/client');
 const logger = require('../utils/logger');
 const { buildHrbpFptkFilterFromUser } = require('../utils/hrbpScope');
+const { buildTokenizedSearch } = require('../utils/search');
 const masterOfficeLocationService = require('./masterOfficeLocationService');
 const masterDivisionService = require('./masterDivisionService');
 
@@ -996,19 +997,21 @@ function buildInternalFptkListWhere(filters = {}, user = null) {
     where.isPublished = filters.isPublished === 'true';
   }
 
-  if (filters.search) {
-    const searchConditions = [
-      { fptkNumber: { contains: filters.search, mode: 'insensitive' } },
-      { positionTitle: { contains: filters.search, mode: 'insensitive' } },
-      { position: { contains: filters.search, mode: 'insensitive' } },
-      { department: { contains: filters.search, mode: 'insensitive' } },
-      { division: { contains: filters.search, mode: 'insensitive' } },
-    ];
+  const tokenizedSearch = buildTokenizedSearch(filters, (token) => ([
+    { fptkNumber: { contains: token, mode: 'insensitive' } },
+    { positionTitle: { contains: token, mode: 'insensitive' } },
+    { position: { contains: token, mode: 'insensitive' } },
+    { department: { contains: token, mode: 'insensitive' } },
+    { division: { contains: token, mode: 'insensitive' } },
+  ]));
+  if (tokenizedSearch) {
     if (where.OR) {
-      where.AND = [{ OR: where.OR }, { OR: searchConditions }];
+      where.AND = [{ OR: where.OR }, tokenizedSearch];
       delete where.OR;
+    } else if (tokenizedSearch.AND) {
+      where.AND = tokenizedSearch.AND;
     } else {
-      where.OR = searchConditions;
+      where.OR = tokenizedSearch.OR;
     }
   }
 
@@ -1473,11 +1476,16 @@ async function getPublishedFPTKs(filters, pagination) {
     where.employmentType = filters.employmentType;
   }
 
-  if (filters.search) {
-    where.OR = [
-      { positionTitle: { contains: filters.search, mode: 'insensitive' } },
-      { jobDescription: { contains: filters.search, mode: 'insensitive' } },
-    ];
+  const tokenizedSearch = buildTokenizedSearch(filters, (token) => ([
+    { positionTitle: { contains: token, mode: 'insensitive' } },
+    { jobDescription: { contains: token, mode: 'insensitive' } },
+  ]));
+  if (tokenizedSearch) {
+    if (tokenizedSearch.AND) {
+      where.AND = tokenizedSearch.AND;
+    } else {
+      where.OR = tokenizedSearch.OR;
+    }
   }
 
   const [fptks, total] = await Promise.all([
