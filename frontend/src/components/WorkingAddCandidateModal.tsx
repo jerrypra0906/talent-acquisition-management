@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline'
 
 interface WorkingAddCandidateModalProps {
@@ -38,6 +39,8 @@ export default function WorkingAddCandidateModal({ isOpen, onClose, onSave }: Wo
     onSave(formData)
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) return null
 

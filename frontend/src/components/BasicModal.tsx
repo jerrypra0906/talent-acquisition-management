@@ -1,11 +1,16 @@
 'use client'
 
+'use client'
+
+import { useModalEscape } from '@/hooks/useModalEscape'
+
 interface BasicModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
 export default function BasicModal({ isOpen, onClose }: BasicModalProps) {
+  useModalEscape(isOpen, onClose)
   if (!isOpen) {
     console.log('BasicModal: not open, returning null')
     return null

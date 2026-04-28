@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface SimpleAddCandidateModalProps {
@@ -28,6 +29,8 @@ export default function SimpleAddCandidateModal({ isOpen, onClose, onSave }: Sim
     onSave(formData)
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) return null
 

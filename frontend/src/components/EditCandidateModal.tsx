@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, CloudArrowUpIcon, DocumentArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline'
 import { Candidate } from '@/types'
 import { MasterDivisionAPI, FPTKAPI } from '@/lib/api'
@@ -386,6 +387,8 @@ export default function EditCandidateModal({ isOpen, onClose, onSave, candidate 
     }
     console.log('========== EditCandidateModal handleSubmit END ==========')
   }
+
+  useModalEscape(isOpen && !!candidate, onClose)
 
   console.log('[EditCandidateModal] Render check:', { isOpen, candidate: candidate?.id, hasCandidate: !!candidate })
   

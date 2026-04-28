@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -178,6 +179,12 @@ const hydrateMenuAccess = (stored: Record<string, MenuAccessConfig> | null | und
 
 const [menuAccessState, setMenuAccessState] = useState<Record<string, MenuAccessConfig>>(defaultMenuAccessState)
 const [menuAccessLoading, setMenuAccessLoading] = useState(true)
+
+useModalEscape(isAddOpen, () => setIsAddOpen(false))
+useModalEscape(isEditOpen && !!editingMember, () => {
+  setIsEditOpen(false)
+  setEditingMember(null)
+})
 
 // Load menu access from API
 useEffect(() => {

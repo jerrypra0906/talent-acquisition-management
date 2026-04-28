@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface SimpleFormModalProps {
@@ -22,6 +23,8 @@ export default function SimpleFormModal({ isOpen, onClose, onSave }: SimpleFormM
     onSave(data)
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) {
     console.log('SimpleFormModal: not open, returning null')

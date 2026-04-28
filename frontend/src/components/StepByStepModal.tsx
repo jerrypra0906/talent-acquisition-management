@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface StepByStepModalProps {
@@ -30,6 +31,8 @@ export default function StepByStepModal({ isOpen, onClose, onSave }: StepByStepM
     onSave(formData)
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) {
     console.log('StepByStepModal: not open, returning null')

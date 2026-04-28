@@ -1,11 +1,14 @@
 'use client'
 
+import { useModalEscape } from '@/hooks/useModalEscape'
+
 interface UltraSimpleModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
 export default function UltraSimpleModal({ isOpen, onClose }: UltraSimpleModalProps) {
+  useModalEscape(isOpen, onClose)
   if (!isOpen) {
     console.log('UltraSimpleModal: not open, returning null')
     return null
