@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { FPTK, Candidate } from '@/types'
 import ViewCandidateModal from './ViewCandidateModal'
@@ -190,6 +191,8 @@ export default function ViewJobPostingModal({ isOpen, onClose, jobPosting, onSta
 
     loadAppliedCandidates()
   }, [jobPosting])
+
+  useModalEscape(isOpen && !!jobPosting, onClose)
 
   if (!isOpen || !jobPosting) return null
 

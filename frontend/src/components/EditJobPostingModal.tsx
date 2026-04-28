@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { FPTK } from '@/types'
 import { MasterOfficeLocationAPI, MasterDivisionAPI, CandidatesAPI, AdminUsersAPI } from '@/lib/api'
@@ -11,6 +12,11 @@ import {
   getMissingFptkRequiredKeys,
   type FptkRequiredKey,
 } from '@/utils/fptkFormRequired'
+import {
+  candidateDivisionMatchesJob,
+  getCandidateDivisions,
+  parseLanguagesData,
+} from '@/utils/candidateProfileShape'
 
 interface EditJobPostingModalProps {
   isOpen: boolean
@@ -624,75 +630,12 @@ export default function EditJobPostingModal({
         console.log('📊 Applied candidates found in EditJobPostingModal:', enrichedFromJob.length, 'from jobPosting,', legacyApplied.length, 'from positionAppliedFor')
         setAppliedCandidates([...enrichedFromJob, ...legacyApplied])
 
-        // Generate suggested candidates based on division and skills
-        const requiredSkills = (jobPosting as any).skills || []
         const jobDivision = jobPosting.department || formData.division || ''
-        
-        // Helper function to parse divisions from candidate data
-        const parseCandidateDivisions = (candidate: any): string[] => {
-          const divisions = new Set<string>()
-          
-          // Check candidate.division (array or string)
-          if (candidate.division !== undefined && candidate.division !== null) {
-            if (Array.isArray(candidate.division)) {
-              candidate.division.forEach((div: string) => {
-                if (div && String(div).trim()) divisions.add(String(div).trim())
-              })
-            } else if (candidate.division) {
-              const trimmed = String(candidate.division).trim()
-              if (trimmed) divisions.add(trimmed)
-            }
-          }
-          
-          // Check candidate.divisionList (array or string)
-          if (candidate.divisionList !== undefined && candidate.divisionList !== null) {
-            if (Array.isArray(candidate.divisionList)) {
-              candidate.divisionList.forEach((div: string) => {
-                if (div && String(div).trim()) divisions.add(String(div).trim())
-              })
-            } else if (candidate.divisionList) {
-              const trimmed = String(candidate.divisionList).trim()
-              if (trimmed) divisions.add(trimmed)
-            }
-          }
-          
-          // Check candidate.user?.division (string)
-          if (candidate.user?.division) {
-            const trimmed = String(candidate.user.division).trim()
-            if (trimmed) divisions.add(trimmed)
-          }
-          
-          // Check candidate.languages?.divisions (array or string)
-          const languagesData = typeof candidate.languages === 'string' 
-            ? (() => { try { return JSON.parse(candidate.languages) } catch { return null } })()
-            : candidate.languages
-          if (languagesData && languagesData.divisions !== undefined) {
-            if (Array.isArray(languagesData.divisions)) {
-              languagesData.divisions.forEach((div: string) => {
-                if (div && String(div).trim()) divisions.add(String(div).trim())
-              })
-            } else if (languagesData.divisions) {
-              const trimmed = String(languagesData.divisions).trim()
-              if (trimmed) divisions.add(trimmed)
-            }
-          }
-          
-          return Array.from(divisions)
-        }
-        
+
         // Helper function to map API candidate to frontend structure
         const mapApiCandidate = (candidate: any) => {
           if (!candidate) return null
-          
-          // Parse languages data
-          const parseLanguagesData = (c: any) => {
-            if (!c || !c.languages) return null
-            if (typeof c.languages === 'string') {
-              try { return JSON.parse(c.languages) } catch { return null }
-            }
-            return c.languages
-          }
-          
+
           // Parse form data diri
           const parseFormDataDiri = (value: any) => {
             if (!value) return null
@@ -759,20 +702,12 @@ export default function EditJobPostingModal({
         const mappedCandidates = candidates.map(mapApiCandidate).filter((c: any) => c !== null)
         
         const suggested = mappedCandidates.filter((candidate: any) => {
-        const candidateSkills = candidate.professionalInfo?.skills || candidate.skills || []
-          
-          // Parse divisions from all possible sources
-          const allDivisions = parseCandidateDivisions(candidate)
-          
-          // Check if candidate has matching division (case-insensitive)
-          const hasMatchingDivision = jobDivision && allDivisions.some(div => 
-            div.toLowerCase() === jobDivision.toLowerCase()
-          )
-          
-          // Don't suggest candidates who already applied
+          const allDivisions = getCandidateDivisions(candidate)
+          const hasMatchingDivision = candidateDivisionMatchesJob(jobDivision, candidate)
           const notApplied = !appliedIds.has(candidate.id)
-          
-          // Show candidates with matching division (regardless of skills)
+          if (hasMatchingDivision && notApplied) {
+            console.log('[EditJobPostingModal] Initial suggested candidate:', candidate.id, 'divisions:', allDivisions)
+          }
           return hasMatchingDivision && notApplied
         }).slice(0, 10) // Limit to 10 suggestions
         
@@ -780,58 +715,6 @@ export default function EditJobPostingModal({
       })
     }
   }, [jobPosting, isOpen])
-
-  // Helper function to parse divisions from candidate data (same as candidates page)
-  const parseCandidateDivisions = (candidate: any): string[] => {
-    const divisions = new Set<string>()
-    
-    // Check candidate.division (array or string)
-    if (candidate.division !== undefined && candidate.division !== null) {
-      if (Array.isArray(candidate.division)) {
-        candidate.division.forEach((div: string) => {
-          if (div && String(div).trim()) divisions.add(String(div).trim())
-        })
-      } else if (candidate.division) {
-        const trimmed = String(candidate.division).trim()
-        if (trimmed) divisions.add(trimmed)
-      }
-    }
-    
-    // Check candidate.divisionList (array or string)
-    if (candidate.divisionList !== undefined && candidate.divisionList !== null) {
-      if (Array.isArray(candidate.divisionList)) {
-        candidate.divisionList.forEach((div: string) => {
-          if (div && String(div).trim()) divisions.add(String(div).trim())
-        })
-      } else if (candidate.divisionList) {
-        const trimmed = String(candidate.divisionList).trim()
-        if (trimmed) divisions.add(trimmed)
-      }
-    }
-    
-    // Check candidate.user?.division (string)
-    if (candidate.user?.division) {
-      const trimmed = String(candidate.user.division).trim()
-      if (trimmed) divisions.add(trimmed)
-    }
-    
-    // Check candidate.languages?.divisions (array or string)
-    const languagesData = typeof candidate.languages === 'string' 
-      ? (() => { try { return JSON.parse(candidate.languages) } catch { return null } })()
-      : candidate.languages
-    if (languagesData && languagesData.divisions !== undefined) {
-      if (Array.isArray(languagesData.divisions)) {
-        languagesData.divisions.forEach((div: string) => {
-          if (div && String(div).trim()) divisions.add(String(div).trim())
-        })
-      } else if (languagesData.divisions) {
-        const trimmed = String(languagesData.divisions).trim()
-        if (trimmed) divisions.add(trimmed)
-      }
-    }
-    
-    return Array.from(divisions)
-  }
 
   const formatDateInput = (value: any) => {
     if (!value) return ''
@@ -843,16 +726,7 @@ export default function EditJobPostingModal({
   // Helper function to map API candidate to frontend structure
   const mapApiCandidate = (candidate: any) => {
     if (!candidate) return null
-    
-    // Parse languages data
-    const parseLanguagesData = (c: any) => {
-      if (!c || !c.languages) return null
-      if (typeof c.languages === 'string') {
-        try { return JSON.parse(c.languages) } catch { return null }
-      }
-      return c.languages
-    }
-    
+
     // Parse form data diri
     const parseFormDataDiri = (value: any) => {
       if (!value) return null
@@ -953,24 +827,17 @@ export default function EditJobPostingModal({
           const jobDivision = formData.division
           
           const suggested = candidates.filter((candidate: any) => {
-            // Parse divisions from all possible sources
-            const allDivisions = parseCandidateDivisions(candidate)
+            const allDivisions = getCandidateDivisions(candidate)
             console.log('[EditJobPostingModal] Candidate divisions:', allDivisions, 'for candidate:', candidate.id)
-            
-            // Check if candidate has matching division (case-insensitive)
-            const hasMatchingDivision = jobDivision && allDivisions.some(div => 
-              div.toLowerCase() === jobDivision.toLowerCase()
-            )
-            
-            // Don't suggest candidates who already applied
+
+            const hasMatchingDivision = candidateDivisionMatchesJob(jobDivision, candidate)
             const notApplied = !appliedCandidates.find((applied: any) => applied.id === candidate.id)
-            
+
             const shouldInclude = hasMatchingDivision && notApplied
             if (shouldInclude) {
               console.log('[EditJobPostingModal] Including candidate:', candidate.id, 'with divisions:', allDivisions)
             }
-            
-            // Show candidates with matching division (regardless of skills)
+
             return shouldInclude
           }).slice(0, 10) // Limit to 10 suggestions
           
@@ -1350,6 +1217,8 @@ export default function EditJobPostingModal({
     onSave(payload)
     onClose()
   }
+
+  useModalEscape(isOpen && !!jobPosting, onClose)
 
   if (!isOpen || !jobPosting) return null
 

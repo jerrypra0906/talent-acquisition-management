@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, type ReactNode } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, DocumentArrowDownIcon, EyeIcon, PrinterIcon } from '@heroicons/react/24/outline'
 import { Candidate } from '@/types'
 import { generateFormDataDiriPDF } from '@/utils/pdfGenerator'
@@ -126,6 +127,8 @@ export default function ViewCandidateModal({ isOpen, onClose, candidate }: ViewC
       }
     }
   }, [candidate])
+
+  useModalEscape(isOpen && !!candidate, onClose)
 
   if (!isOpen || !candidate) {
     return null
@@ -545,12 +548,9 @@ export default function ViewCandidateModal({ isOpen, onClose, candidate }: ViewC
             {activeTab === 'jobpostings' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div>
-                  <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#374151', marginBottom: '6px' }}>
+                  <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#374151', marginBottom: '12px' }}>
                     Position applied for
                   </h4>
-                  <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>
-                    Statuses match Position detail: they come from the same application record for that role.
-                  </p>
                   {loadingPositionApplications ? (
                     <div
                       style={{

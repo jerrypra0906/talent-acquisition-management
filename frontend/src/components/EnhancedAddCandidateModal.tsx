@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, CloudArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline'
 import { FPTKAPI, MasterDivisionAPI } from '@/lib/api'
 import { compressFile, formatFileSize } from '@/utils/fileCompression'
@@ -270,6 +271,8 @@ export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: E
     )
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) {
     console.log('EnhancedAddCandidateModal: not open, returning null')

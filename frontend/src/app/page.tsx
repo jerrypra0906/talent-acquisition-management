@@ -24,6 +24,7 @@ import {
   type DashboardTimeMode,
   type DateRange,
 } from '@/utils/dashboardPeriod'
+import { useModalEscape } from '@/hooks/useModalEscape'
 
 const PRIORITY_FILTERS = ['ALL', 'P0', 'P1', 'P2'] as const
 
@@ -330,6 +331,19 @@ export default function Dashboard() {
     const last = new Date(y, m + 1, 0)
     return `${y}-${String(m + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`
   })
+
+  const closeDetailModal = useCallback(() => {
+    setDetailModal(null)
+    setDetailQuery('')
+  }, [])
+  const closeTotalCandidatesModal = useCallback(() => {
+    setTotalCandidatesModal(null)
+    setTotalCandidatesQuery('')
+  }, [])
+
+  useModalEscape(openPositionsModalOpen, () => setOpenPositionsModalOpen(false))
+  useModalEscape(!!totalCandidatesModal, closeTotalCandidatesModal)
+  useModalEscape(!!detailModal, closeDetailModal)
 
   const periodBounds = useMemo(
     () => getDashboardPeriodBounds(timeMode, { weekValue, monthValue, customStart, customEnd }),

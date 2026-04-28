@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -28,6 +29,17 @@ export default function MasterDivisionPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [selectedDivision, setSelectedDivision] = useState<Division | null>(null)
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
+
+  useModalEscape(isAddModalOpen, () => setIsAddModalOpen(false))
+  useModalEscape(isEditModalOpen, () => {
+    setIsEditModalOpen(false)
+    setSelectedDivision(null)
+  })
+  useModalEscape(isViewModalOpen, () => {
+    setIsViewModalOpen(false)
+    setSelectedDivision(null)
+  })
+  useModalEscape(isBulkUploadOpen, () => setIsBulkUploadOpen(false))
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

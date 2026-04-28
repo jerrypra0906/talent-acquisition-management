@@ -14,6 +14,7 @@ import {
   EyeIcon,
   BriefcaseIcon,
   ChartBarIcon,
+  ClipboardDocumentListIcon,
   CogIcon,
   UserGroupIcon,
   BuildingOfficeIcon,
@@ -37,7 +38,7 @@ const baseNavigation: TopNavItem[] = [
   },
   { kind: 'link', name: 'Position', href: '/fptk', icon: BriefcaseIcon },
   { kind: 'link', name: 'Summary by Position', href: '/summary-by-position', icon: ChartBarIcon },
-  { kind: 'link', name: 'Reports', href: '/reports', icon: ChartBarIcon },
+  { kind: 'link', name: 'Reports', href: '/reports', icon: ClipboardDocumentListIcon },
   { kind: 'link', name: 'User Management', href: '/team', icon: UserGroupIcon },
 ]
 
@@ -299,18 +300,29 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                   <div className="flex h-16 shrink-0 items-center">
                     <h1 className="text-xl font-bold text-gray-900">KPN TAS</h1>
                   </div>
-                  <nav className="flex flex-1 flex-col">
+                  <nav className="flex flex-1 flex-col" aria-busy={loading}>
                     <ul role="list" className="flex flex-1 flex-col gap-y-7">
                       <li>
                         <ul role="list" className="-mx-2 space-y-1">
+                          {loading ? (
+                            <li className="space-y-2 px-2" aria-hidden="true">
+                              {Array.from({ length: 6 }).map((_, i) => (
+                                <div
+                                  key={i}
+                                  className="h-10 animate-pulse rounded-md bg-gray-100"
+                                />
+                              ))}
+                            </li>
+                          ) : (
                           <PrimaryNavList
                             navigation={navigation}
                             pathname={pathname}
                             onLinkClick={() => setSidebarOpen(false)}
                           />
+                          )}
                         </ul>
                       </li>
-                      {filteredMasterNavigation.length > 0 && (
+                      {!loading && filteredMasterNavigation.length > 0 && (
                       <li>
                         <div className="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wider">
                           Master Data
@@ -343,6 +355,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                         </ul>
                       </li>
                       )}
+                      {!loading && (
                       <li>
                         <ul role="list" className="-mx-2 space-y-1">
                           {settingsNavigation.map((item) => (
@@ -371,6 +384,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                           ))}
                         </ul>
                       </li>
+                      )}
                     </ul>
                   </nav>
                 </div>
@@ -386,14 +400,25 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
           <div className="flex h-16 shrink-0 items-center">
             <h1 className="text-xl font-bold text-gray-900">KPN TAS</h1>
           </div>
-          <nav className="flex flex-1 flex-col">
+          <nav className="flex flex-1 flex-col" aria-busy={loading}>
             <ul role="list" className="flex flex-1 flex-col gap-y-7">
               <li>
                 <ul role="list" className="-mx-2 space-y-1">
-                  <PrimaryNavList navigation={navigation} pathname={pathname} />
+                  {loading ? (
+                    <li className="space-y-2 px-2" aria-hidden="true">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="h-10 animate-pulse rounded-md bg-gray-100"
+                        />
+                      ))}
+                    </li>
+                  ) : (
+                    <PrimaryNavList navigation={navigation} pathname={pathname} />
+                  )}
                 </ul>
               </li>
-              {filteredMasterNavigation.length > 0 && (
+              {!loading && filteredMasterNavigation.length > 0 && (
               <li>
                 <div className="text-xs font-semibold leading-6 text-gray-400 uppercase tracking-wider">
                   Master Data
@@ -426,6 +451,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 </ul>
               </li>
               )}
+              {!loading && (
               <li>
                 <ul role="list" className="-mx-2 space-y-1">
                   {settingsNavigation.map((item) => (
@@ -454,6 +480,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                   ))}
                 </ul>
               </li>
+              )}
             </ul>
           </nav>
         </div>

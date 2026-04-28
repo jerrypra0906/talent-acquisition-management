@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -396,6 +397,8 @@ export default function FPTKPage() {
       ].join('~'),
     [ptFilter, areaFilter, areaDetailFilter]
   )
+
+  useModalEscape(isUploadModalOpen && !!uploadResult, () => setIsUploadModalOpen(false))
 
   useEffect(() => {
     let isMounted = true

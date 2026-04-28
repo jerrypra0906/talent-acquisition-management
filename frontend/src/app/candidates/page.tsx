@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout/Layout'
@@ -21,6 +22,7 @@ import { saveCandidateLink } from '@/utils/candidateLink'
 import { matchesTokenizedSearch } from '@/utils/search'
 import { CandidatesAPI, MenuAccessAPI } from '@/lib/api'
 import BulkUploadModal from '@/components/BulkUploadModal'
+import { getCandidateDivisions, parseLanguagesData } from '@/utils/candidateProfileShape'
 
 const mapEnumToRole = (role: string): string => {
   if (!role) return role
@@ -200,21 +202,6 @@ const normalizeDrivingLicense = (value: any, formData?: any) => {
   return ''
 }
 
-const parseLanguagesData = (candidate: any) => {
-  if (!candidate || !candidate.languages) return null
-  if (typeof candidate.languages === 'string') {
-    try {
-      return JSON.parse(candidate.languages)
-    } catch {
-      return null
-    }
-  }
-  if (typeof candidate.languages === 'object') {
-    return candidate.languages
-  }
-  return null
-}
-
 const parsePositionAppliedFor = (candidate: any, languagesData?: any) => {
   let positionAppliedFor: string[] = []
   if (candidate.positionAppliedFor !== undefined && candidate.positionAppliedFor !== null) {
@@ -231,52 +218,6 @@ const parsePositionAppliedFor = (candidate: any, languagesData?: any) => {
   return positionAppliedFor
 }
 
-const parseDivisions = (candidate: any, languagesData?: any) => {
-  const divisions = new Set<string>()
-
-  if (candidate.division !== undefined && candidate.division !== null) {
-    if (Array.isArray(candidate.division)) {
-      candidate.division.forEach((div: string) => {
-        if (div && String(div).trim()) divisions.add(String(div).trim())
-      })
-    } else if (candidate.division) {
-      const trimmed = String(candidate.division).trim()
-      if (trimmed) divisions.add(trimmed)
-    }
-  }
-
-  if (candidate.divisionList !== undefined && candidate.divisionList !== null) {
-    if (Array.isArray(candidate.divisionList)) {
-      candidate.divisionList.forEach((div: string) => {
-        if (div && String(div).trim()) divisions.add(String(div).trim())
-      })
-    } else if (candidate.divisionList) {
-      const trimmed = String(candidate.divisionList).trim()
-      if (trimmed) divisions.add(trimmed)
-    }
-  }
-
-  if (candidate.user?.division) {
-    const trimmed = String(candidate.user.division).trim()
-    if (trimmed) divisions.add(trimmed)
-  }
-
-  if (languagesData && languagesData.divisions !== undefined) {
-    if (Array.isArray(languagesData.divisions)) {
-      languagesData.divisions.forEach((div: string) => {
-        if (div && String(div).trim()) divisions.add(String(div).trim())
-      })
-    } else if (languagesData.divisions) {
-      const trimmed = String(languagesData.divisions).trim()
-      if (trimmed) divisions.add(trimmed)
-    } else if (languagesData.divisions === null) {
-      // Explicit clear
-    }
-  }
-
-  return Array.from(divisions)
-}
-
 const normalizeValue = (primary: any, fallback?: any) => {
   if (primary !== undefined && primary !== null && String(primary).trim() !== '') return primary
   if (fallback !== undefined && fallback !== null && String(fallback).trim() !== '') return fallback
@@ -291,7 +232,7 @@ export const mapApiCandidate = (candidate: any): Candidate => {
   const languagesData = parseLanguagesData(candidate)
   const formDataDiri = parseFormDataDiri(candidate.formDataDiri)
   const positionAppliedFor = parsePositionAppliedFor(candidate, languagesData)
-  const divisionList = parseDivisions(candidate, languagesData)
+  const divisionList = getCandidateDivisions(candidate)
   const primaryDivision = divisionList.length > 0 ? divisionList[0] : (candidate.user?.division || null)
 
   const formFullName = formDataDiri?.fullName?.trim() || ''
@@ -406,6 +347,8 @@ export default function CandidatesPage() {
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
   const [menuAccess, setMenuAccess] = useState<Record<string, any>>({})
   const [menuAccessLoading, setMenuAccessLoading] = useState(true)
+
+  useModalEscape(showLinkModal, () => setShowLinkModal(false))
 
   // Load candidates from API
   const loadCandidates = async () => {

@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react'
+'use client'
+
+import { useCallback, useMemo, useState } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 
 type UploadResult = {
   created?: number
@@ -33,6 +36,12 @@ export default function BulkUploadModal({
     const errs = result?.errors || []
     return errs.slice(0, 10)
   }, [result])
+
+  const closeOnEscape = useCallback(() => {
+    if (!busy) onClose()
+  }, [busy, onClose])
+
+  useModalEscape(isOpen, closeOnEscape)
 
   if (!isOpen) return null
 

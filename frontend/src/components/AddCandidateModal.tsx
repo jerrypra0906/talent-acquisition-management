@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, CloudArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline'
 import { compressFile, formatFileSize } from '@/utils/fileCompression'
 
@@ -279,6 +280,8 @@ export default function AddCandidateModal({ isOpen, onClose, onSave }: AddCandid
     })
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) return null
 

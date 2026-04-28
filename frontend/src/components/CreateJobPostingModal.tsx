@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { MasterOfficeLocationAPI, MasterDivisionAPI, CandidatesAPI, AdminUsersAPI } from '@/lib/api'
 import { compressFile, formatFileSize } from '@/utils/fileCompression'
@@ -9,6 +10,12 @@ import {
   getMissingFptkRequiredKeys,
   type FptkRequiredKey,
 } from '@/utils/fptkFormRequired'
+import {
+  candidateDivisionMatchesJob,
+  countDistinctMatchingSkills,
+  getCandidateDivisions,
+  parseLanguagesData,
+} from '@/utils/candidateProfileShape'
 
 interface CreateJobPostingModalProps {
   isOpen: boolean
@@ -244,70 +251,9 @@ export default function CreateJobPostingModal({ isOpen, onClose, onSave, editing
     return date.toISOString().split('T')[0]
   }
 
-  // Helper function to parse divisions from candidate data (same as candidates page)
-  const parseCandidateDivisions = (candidate: any): string[] => {
-    const divisions = new Set<string>()
-    
-    // Check candidate.division (array or string)
-    if (candidate.division !== undefined && candidate.division !== null) {
-      if (Array.isArray(candidate.division)) {
-        candidate.division.forEach((div: string) => {
-          if (div && String(div).trim()) divisions.add(String(div).trim())
-        })
-      } else if (candidate.division) {
-        const trimmed = String(candidate.division).trim()
-        if (trimmed) divisions.add(trimmed)
-      }
-    }
-    
-    // Check candidate.divisionList (array or string)
-    if (candidate.divisionList !== undefined && candidate.divisionList !== null) {
-      if (Array.isArray(candidate.divisionList)) {
-        candidate.divisionList.forEach((div: string) => {
-          if (div && String(div).trim()) divisions.add(String(div).trim())
-        })
-      } else if (candidate.divisionList) {
-        const trimmed = String(candidate.divisionList).trim()
-        if (trimmed) divisions.add(trimmed)
-      }
-    }
-    
-    // Check candidate.user?.division (string)
-    if (candidate.user?.division) {
-      const trimmed = String(candidate.user.division).trim()
-      if (trimmed) divisions.add(trimmed)
-    }
-    
-    // Check candidate.languages?.divisions (array or string)
-    const languagesData = typeof candidate.languages === 'string' 
-      ? (() => { try { return JSON.parse(candidate.languages) } catch { return null } })()
-      : candidate.languages
-    if (languagesData && languagesData.divisions !== undefined) {
-      if (Array.isArray(languagesData.divisions)) {
-        languagesData.divisions.forEach((div: string) => {
-          if (div && String(div).trim()) divisions.add(String(div).trim())
-        })
-      } else if (languagesData.divisions) {
-        const trimmed = String(languagesData.divisions).trim()
-        if (trimmed) divisions.add(trimmed)
-      }
-    }
-    
-    return Array.from(divisions)
-  }
-
   // Helper function to map API candidate to frontend structure
   const mapApiCandidate = (candidate: any) => {
     if (!candidate) return null
-    
-    // Parse languages data
-    const parseLanguagesData = (c: any) => {
-      if (!c || !c.languages) return null
-      if (typeof c.languages === 'string') {
-        try { return JSON.parse(c.languages) } catch { return null }
-      }
-      return c.languages
-    }
     
     // Parse form data diri
     const parseFormDataDiri = (value: any) => {
@@ -408,33 +354,26 @@ export default function CreateJobPostingModal({ isOpen, onClose, onSave, editing
           const candidates = rawCandidates.map(mapApiCandidate).filter((c: any) => c !== null)
           
           const suggested = candidates.filter((candidate: any) => {
-            const candidateSkills = candidate.professionalInfo?.skills || candidate.skills || []
-            
-            // Parse divisions from all possible sources
-            const allDivisions = parseCandidateDivisions(candidate)
+            const allDivisions = getCandidateDivisions(candidate)
             console.log('[CreateJobPostingModal] Candidate divisions:', allDivisions, 'for candidate:', candidate.id)
-            
-            // Check if candidate has matching division (case-insensitive)
-            const hasMatchingDivision = allDivisions.some(div => 
-              div.toLowerCase() === formData.division.toLowerCase()
-            )
-            
-            // Check if candidate has at least 2 matching skills (if skills are provided)
-            const matchingSkillsCount = formData.skills.length > 0 
-              ? candidateSkills.filter((skill: string) => formData.skills.includes(skill)).length
-              : 0
-            
-            // Show candidates with matching division, OR candidates with matching division AND at least 2 matching skills
-            const hasMinMatchingSkills = formData.skills.length === 0 || matchingSkillsCount >= 2
-            
-            // Don't suggest candidates who are already applied
-            const notApplied = !appliedCandidates.find(applied => applied.id === candidate.id)
-            
+
+            const hasMatchingDivision = candidateDivisionMatchesJob(formData.division, candidate)
+
+            const matchingSkillsCount =
+              formData.skills.length > 0
+                ? countDistinctMatchingSkills(formData.skills, candidate)
+                : 0
+
+            const hasMinMatchingSkills =
+              formData.skills.length === 0 || matchingSkillsCount >= 2
+
+            const notApplied = !appliedCandidates.find((applied) => applied.id === candidate.id)
+
             const shouldInclude = hasMatchingDivision && hasMinMatchingSkills && notApplied
             if (shouldInclude) {
               console.log('[CreateJobPostingModal] Including candidate:', candidate.id, 'with divisions:', allDivisions)
             }
-            
+
             return shouldInclude
           }).slice(0, 10) // Limit to 10 suggestions
           
@@ -699,6 +638,8 @@ export default function CreateJobPostingModal({ isOpen, onClose, onSave, editing
     })
     onClose()
   }
+
+  useModalEscape(isOpen, onClose)
 
   if (!isOpen) return null
 

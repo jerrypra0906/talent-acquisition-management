@@ -1,6 +1,7 @@
 'use client'
 
 import { XMarkIcon } from '@heroicons/react/24/outline'
+import { useModalEscape } from '@/hooks/useModalEscape'
 
 interface TestModalProps {
   isOpen: boolean
@@ -8,6 +9,7 @@ interface TestModalProps {
 }
 
 export default function TestModal({ isOpen, onClose }: TestModalProps) {
+  useModalEscape(isOpen, onClose)
   if (!isOpen) return null
 
   return (
