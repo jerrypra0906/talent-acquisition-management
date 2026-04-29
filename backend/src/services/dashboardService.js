@@ -241,6 +241,7 @@ async function getDashboardStats(user = null) {
 
     // Fetch all FPTKs for dashboard charts
     const allFPTKs = await prisma.fPTK.findMany({
+      where: fptkWhere,
       select: {
         id: true,
         areaDetail: true,
@@ -376,6 +377,7 @@ async function getDashboardStats(user = null) {
 
     // Generate recent activity from candidates and FPTKs
     const recentCandidates = await prisma.candidate.findMany({
+      where: candidateWhere,
       take: 3,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -390,6 +392,7 @@ async function getDashboardStats(user = null) {
     });
 
     const recentFPTKs = await prisma.fPTK.findMany({
+      where: fptkWhere,
       take: 2,
       orderBy: { createdAt: 'desc' },
       select: {

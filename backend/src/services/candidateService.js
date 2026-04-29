@@ -896,17 +896,8 @@ async function searchCandidates(filters, pagination, user = null) {
         where.id = '00000000-0000-0000-0000-000000000000';
       }
     } else if ((userRole === 'Head of Division' || userRole === 'DEPARTMENT_HEAD') && userDivision) {
-      // Head of Division: only see candidates where Position.Division = Team.Division OR Candidates.Division = Team.Division
-      where.OR = [
-        { user: { division: userDivision } },
-        {
-          applications: {
-            some: {
-              fptk: { division: userDivision }
-            }
-          }
-        }
-      ];
+      // Head of Division: only see candidates whose profile division matches their division
+      where.user = { division: userDivision };
     } else if (userRole === 'HRBP') {
       // HRBP: only see candidates where Position.PT = Team.PT AND Position.Area = Team.Area AND Position.Area Detail = Team.Area Detail
       // All three fields must be present and match
