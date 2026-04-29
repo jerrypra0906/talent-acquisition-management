@@ -120,6 +120,42 @@ export default function EditJobPostingModal({
       .join(' ')
   }
 
+  const mapAppliedStatusToBackend = (status?: string) => {
+    const raw = (status || '').toString().trim()
+    if (!raw) return 'SUBMITTED'
+    const upper = raw.toUpperCase()
+    // If already enum, keep it
+    if (/^[A-Z0-9_]+$/.test(upper)) return upper
+
+    const normalized = raw.toLowerCase()
+    const lookup: Record<string, string> = {
+      'applied': 'SUBMITTED',
+      'under review': 'SCREENING',
+      'shortlisted': 'SCREENING',
+      'interview scheduled': 'INTERVIEW_SCHEDULED',
+      'interviewed': 'INTERVIEW_COMPLETED',
+      'assessment': 'TECHNICAL_TEST',
+      'offering creation': 'OFFER_PROPOSED',
+      'pending feedback': 'OFFER_APPROVED',
+      'document verification': 'DOCUMENT_VERIFICATION',
+      'offer sent': 'OFFER_SENT',
+      'offer accepted': 'OFFER_ACCEPTED',
+      'offer rejected': 'OFFER_REJECTED',
+      'mcu': 'MEDICAL_CHECKUP_COMPLETED',
+      'medical checkup scheduled': 'MEDICAL_CHECKUP_SCHEDULED',
+      'medical checkup completed': 'MEDICAL_CHECKUP_COMPLETED',
+      'contract sent': 'CONTRACT_SENT',
+      'contract signed': 'CONTRACT_SIGNED',
+      'on boarding': 'ONBOARDING',
+      'hired': 'HIRED',
+      'rejected (failed interview / assessment)': 'REJECTED',
+      'rejected': 'REJECTED',
+      'withdrawn': 'WITHDRAWN',
+      'keep in view': 'KEEP_IN_VIEW',
+    }
+    return lookup[normalized] || 'SUBMITTED'
+  }
+
   const mergeAppliedCandidateData = (candidate: any, candidateInfo?: any) => {
     const baseInfo = candidateInfo || {}
     const id = candidate.candidateId || candidate.id || baseInfo.candidateId || baseInfo.id
@@ -949,10 +985,15 @@ export default function EditJobPostingModal({
 
   const handleCandidateStatusChange = (candidateId: string, newStatus: string) => {
     setAppliedCandidates(prev => {
-      const target = prev.find(c => c.id === candidateId)
+      const target = prev.find(
+        c => c.id === candidateId || c.candidateId === candidateId
+      )
       const oldStatus = target ? target.status : undefined
       
-      const updateData: any = { status: newStatus }
+      const updateData: any = {
+        status: newStatus,
+        backendStatus: mapAppliedStatusToBackend(newStatus),
+      }
       const normalized = (newStatus || '').toString().trim().toLowerCase()
       if (normalized.startsWith('rejected')) {
         updateData.rejectedDate = new Date().toISOString()
@@ -970,9 +1011,11 @@ export default function EditJobPostingModal({
         updateData.interviews = [{ interviewer: '', date: '', time: '', results: '' }]
       }
       
-      const updated = prev.map(candidate => 
-        candidate.id === candidateId ? { ...candidate, ...updateData } : candidate
-      )
+      const updated = prev.map(candidate => {
+        const matches =
+          candidate.id === candidateId || candidate.candidateId === candidateId
+        return matches ? { ...candidate, ...updateData } : candidate
+      })
       if (jobPosting) {
         appendOpenPositionLog({
           type: 'CANDIDATE_STATUS_UPDATE',
@@ -1127,7 +1170,7 @@ export default function EditJobPostingModal({
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // Prevent submission if editing is disabled
@@ -1214,8 +1257,7 @@ export default function EditJobPostingModal({
       milestones: milestones
     }
     
-    onSave(payload)
-    onClose()
+    await Promise.resolve(onSave(payload))
   }
 
   useModalEscape(isOpen && !!jobPosting, onClose)
@@ -2086,8 +2128,8 @@ export default function EditJobPostingModal({
                 </h4>
                 {appliedCandidates.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {appliedCandidates.map((candidate) => (
-                    <div key={candidate.id} style={{
+                    {appliedCandidates.map((candidate, idx) => (
+                    <div key={candidate.id || candidate.candidateId || idx} style={{
                       padding: '16px',
                       backgroundColor: '#f9fafb',
                       borderRadius: '8px',
@@ -2125,7 +2167,12 @@ export default function EditJobPostingModal({
                           </label>
                           <select
                             value={candidate.status}
-                            onChange={(e) => handleCandidateStatusChange(candidate.id, e.target.value)}
+                            onChange={(e) =>
+                              handleCandidateStatusChange(
+                                candidate.id || candidate.candidateId,
+                                e.target.value
+                              )
+                            }
                             style={{
                               padding: '6px 8px',
                               border: '1px solid #d1d5db',

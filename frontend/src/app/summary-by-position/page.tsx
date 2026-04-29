@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout/Layout'
 import { FPTKAPI } from '@/lib/api'
+import Link from 'next/link'
 import MultiSelectDropdown from '@/components/MultiSelectDropdown'
 import { getSlaBucketIndonesiaWorkingDays } from '@/utils/indoBusinessDays'
 import {
@@ -16,6 +17,7 @@ interface StatusCounts {
 }
 
 interface SummaryRow {
+  id: string
   priority: string
   division: string
   location: string
@@ -148,6 +150,7 @@ export default function SummaryByPositionPage() {
         }
 
         return {
+          id: job.id,
           priority: job.priority || job.urgentNormal || '—',
           division: job.department || job.division || '-',
           location: job.areaDetail || job.area || job.location || '-',
@@ -386,7 +389,18 @@ export default function SummaryByPositionPage() {
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.division}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.location}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.section}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.position}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                      {row.id ? (
+                        <Link
+                          href={`/fptk?edit=${encodeURIComponent(row.id)}`}
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline font-medium"
+                        >
+                          {row.position}
+                        </Link>
+                      ) : (
+                        row.position
+                      )}
+                    </td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                       {displayFptkCurrentStatus(row.currentStatus)}
                     </td>

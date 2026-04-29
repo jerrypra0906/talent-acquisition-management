@@ -52,6 +52,11 @@ export default function ReportsPage() {
     return 'Normal'
   }
 
+  const normalizeCurrentStatus = (status?: string | null) => {
+    const raw = (status || '').toString().trim()
+    return raw || 'Pending FKTK'
+  }
+
   const fetchPositions = async () => {
     const limit = 100
     let page = 1
@@ -82,18 +87,22 @@ export default function ReportsPage() {
     if (selectedPriorities.length > 0 && !selectedPriorities.includes(priorityLabel)) return false
 
     if (selectedStatuses.length > 0) {
-      const currentStatus = position.currentStatus || position.status || 'Pending FKTK'
+      const currentStatus = normalizeCurrentStatus(position.currentStatus || position.status)
       if (!selectedStatuses.includes(currentStatus)) return false
     }
 
     if (requestDateStart) {
       const requestDate = position.requestDate ? new Date(position.requestDate) : null
-      if (!requestDate || requestDate < new Date(requestDateStart)) return false
+      const start = new Date(requestDateStart)
+      start.setHours(0, 0, 0, 0)
+      if (!requestDate || requestDate < start) return false
     }
 
     if (requestDateEnd) {
       const requestDate = position.requestDate ? new Date(position.requestDate) : null
-      if (!requestDate || requestDate > new Date(requestDateEnd)) return false
+      const end = new Date(requestDateEnd)
+      end.setHours(23, 59, 59, 999)
+      if (!requestDate || requestDate > end) return false
     }
 
     return true
@@ -126,7 +135,7 @@ export default function ReportsPage() {
       row.hiringManager || '',
       row.employmentType || row.type || '',
       row.location || '',
-      row.currentStatus || row.status || '',
+      normalizeCurrentStatus(row.currentStatus || row.status),
       row.requestDate ? new Date(row.requestDate).toLocaleDateString() : '',
       row.totalRequest || row.numberOfPositions || '',
       row.statusFktk || '',

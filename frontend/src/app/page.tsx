@@ -306,6 +306,8 @@ export default function Dashboard() {
   const openPositionsLoadedOnceRef = useRef(false)
 
   const TOTAL_CANDIDATES_MODAL_PAGE_SIZE = 100
+  const DETAIL_MODAL_PAGE_SIZE = 100
+  const OPEN_POSITIONS_MODAL_PAGE_SIZE = 100
   const [totalCandidatesModal, setTotalCandidatesModal] = useState<{
     page: number
     totalPages: number
@@ -314,6 +316,8 @@ export default function Dashboard() {
     loading: boolean
   } | null>(null)
   const [totalCandidatesQuery, setTotalCandidatesQuery] = useState('')
+  const [detailModalPage, setDetailModalPage] = useState(1)
+  const [openPositionsPage, setOpenPositionsPage] = useState(1)
 
   const [timeMode, setTimeMode] = useState<DashboardTimeMode>('month')
   const [weekValue, setWeekValue] = useState(() => toWeekInputValue())
@@ -335,6 +339,7 @@ export default function Dashboard() {
   const closeDetailModal = useCallback(() => {
     setDetailModal(null)
     setDetailQuery('')
+    setDetailModalPage(1)
   }, [])
   const closeTotalCandidatesModal = useCallback(() => {
     setTotalCandidatesModal(null)
@@ -557,8 +562,13 @@ export default function Dashboard() {
   )
 
   const totalCandidateHeadline = useMemo(
-    () => totalCandidateItems.length,
-    [totalCandidateItems.length]
+    () => {
+      if (typeof baseStats?.totalCandidates === 'number') {
+        return baseStats.totalCandidates
+      }
+      return totalCandidateItems.length
+    },
+    [baseStats?.totalCandidates, totalCandidateItems.length]
   )
 
   const interviewHeadline = useMemo(
@@ -582,6 +592,46 @@ export default function Dashboard() {
   )
 
   const customRangeInvalid = timeMode === 'custom' && !periodBounds
+
+  const filteredDetailItems = useMemo(() => {
+    return detailModal ? detailModal.items.filter((it: DashboardListItem) => matchesQuery(it, detailQuery)) : []
+  }, [detailModal, detailQuery])
+
+  const detailModalMeta = useMemo(() => {
+    const total = filteredDetailItems.length
+    const totalPages = Math.max(1, Math.ceil(total / DETAIL_MODAL_PAGE_SIZE))
+    const safePage = Math.min(detailModalPage, totalPages)
+    const start = (safePage - 1) * DETAIL_MODAL_PAGE_SIZE
+    const end = start + DETAIL_MODAL_PAGE_SIZE
+    return {
+      total,
+      totalPages,
+      safePage,
+      pagedItems: filteredDetailItems.slice(start, end),
+    }
+  }, [filteredDetailItems, detailModalPage, DETAIL_MODAL_PAGE_SIZE])
+
+  const openPositionsMeta = useMemo(() => {
+    const total = openPositionsList.length
+    const totalPages = Math.max(1, Math.ceil(total / OPEN_POSITIONS_MODAL_PAGE_SIZE))
+    const safePage = Math.min(openPositionsPage, totalPages)
+    const start = (safePage - 1) * OPEN_POSITIONS_MODAL_PAGE_SIZE
+    const end = start + OPEN_POSITIONS_MODAL_PAGE_SIZE
+    return {
+      total,
+      totalPages,
+      safePage,
+      pagedItems: openPositionsList.slice(start, end),
+    }
+  }, [openPositionsList, openPositionsPage, OPEN_POSITIONS_MODAL_PAGE_SIZE])
+
+  useEffect(() => {
+    setDetailModalPage(1)
+  }, [detailQuery, detailModal?.title])
+
+  useEffect(() => {
+    setOpenPositionsPage(1)
+  }, [openPositionsList, openPositionsModalOpen])
 
   const combinedLocations = useMemo(() => {
     const locationsSet = new Set<string>()
@@ -1174,6 +1224,7 @@ useEffect(() => {
                   return
                 }
                 if (item.name === 'Open Positions') {
+                  setOpenPositionsPage(1)
                   setOpenPositionsModalOpen(true)
                   if (!openPositionsLoadedOnceRef.current) {
                     await fetchOpenPositions('')
@@ -1293,11 +1344,11 @@ useEffect(() => {
                 <div className="mt-4 max-h-[60vh] overflow-auto border rounded-md">
                   {openPositionsLoading ? (
                     <div className="p-4 text-sm text-gray-500">Loading…</div>
-                  ) : openPositionsList.length === 0 ? (
+                  ) : openPositionsMeta.total === 0 ? (
                     <div className="p-4 text-sm text-gray-500">No open positions found.</div>
                   ) : (
                     <ul className="divide-y">
-                      {openPositionsList.map((p: any) => {
+                      {openPositionsMeta.pagedItems.map((p: any) => {
                         const title = p?.title || p?.position || 'Unknown Position'
                         const sub = `${p?.department || 'N/A'} • ${p?.location || 'N/A'}`
                         const meta = p?.currentStatus || p?.status || 'N/A'
@@ -1321,13 +1372,34 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t flex justify-end">
-                <button
-                  className="px-4 py-2 text-sm rounded-md border text-gray-700 bg-white hover:bg-gray-50"
-                  onClick={() => setOpenPositionsModalOpen(false)}
-                >
-                  Close
-                </button>
+              <div className="px-6 py-4 border-t flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-gray-500">
+                  Page {openPositionsMeta.safePage} of {openPositionsMeta.totalPages} · {openPositionsMeta.total} total
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={openPositionsLoading || openPositionsMeta.safePage <= 1}
+                    onClick={() => setOpenPositionsPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={openPositionsLoading || openPositionsMeta.safePage >= openPositionsMeta.totalPages}
+                    onClick={() => setOpenPositionsPage((p) => p + 1)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm rounded-md border text-gray-700 bg-white hover:bg-gray-50"
+                    onClick={() => setOpenPositionsModalOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1977,9 +2049,7 @@ useEffect(() => {
 
               {detailModal.items.length > 0 ? (
                 <ul className="divide-y">
-                  {detailModal.items
-                    .filter((it: DashboardListItem) => matchesQuery(it, detailQuery))
-                    .map((it: DashboardListItem, idx: number) => {
+                  {detailModalMeta.pagedItems.map((it: DashboardListItem, idx: number) => {
                       const clickable = !!it.id && (it.kind === 'fptk' || it.kind === 'candidate')
                       const onClick = () => {
                         if (it.kind === 'fptk') return openFptkEdit(it.id)
@@ -2009,15 +2079,38 @@ useEffect(() => {
               )}
             </div>
             <div className="px-6 py-4 border-t flex justify-end">
-              <button
-                className="px-4 py-2 text-sm rounded-md border text-gray-700 bg-white hover:bg-gray-50"
-                onClick={() => {
-                  setDetailModal(null)
-                  setDetailQuery('')
-                }}
-              >
-                Close
-              </button>
+              <div className="flex w-full items-center justify-between gap-3">
+                <p className="text-xs text-gray-500">
+                  Page {detailModalMeta.safePage} of {detailModalMeta.totalPages} · {detailModalMeta.total} total
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={detailModalMeta.safePage <= 1}
+                    onClick={() => setDetailModalPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={detailModalMeta.safePage >= detailModalMeta.totalPages}
+                    onClick={() => setDetailModalPage((p) => p + 1)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm rounded-md border text-gray-700 bg-white hover:bg-gray-50"
+                    onClick={() => {
+                      setDetailModal(null)
+                      setDetailQuery('')
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
