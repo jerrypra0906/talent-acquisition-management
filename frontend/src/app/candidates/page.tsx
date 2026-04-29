@@ -355,25 +355,27 @@ export default function CandidatesPage() {
   // Load candidates from API
   const loadCandidates = async () => {
     try {
-      console.log('LOAD CANDIDATES - Fetching candidates from API...')
-      const response = await CandidatesAPI.getAll({ search: searchTerm }, { page: 1, limit: 100 })
-      console.log('LOAD CANDIDATES - API response:', JSON.stringify(response, null, 2))
-      const candidatesData = response.data || []
-      console.log('LOAD CANDIDATES - candidatesData length:', candidatesData.length)
-      
-      // Map backend candidates to frontend format
-      const mappedCandidates = candidatesData.map((candidate: any) => mapApiCandidate(candidate))
-      
-      console.log('LOAD CANDIDATES - Mapped candidates count:', mappedCandidates.length)
-      if (mappedCandidates.length > 0) {
-        console.log('LOAD CANDIDATES - Sample mapped candidate:', JSON.stringify({
-          id: mappedCandidates[0].id,
-          division: mappedCandidates[0].division,
-          positionAppliedFor: (mappedCandidates[0] as any).positionAppliedFor,
-          userDivision: mappedCandidates[0].user?.division
-        }, null, 2))
+      const limit = 100
+      const maxPages = 100
+      let page = 1
+      let hasMore = true
+      const allCandidatesData: any[] = []
+
+      while (hasMore && page <= maxPages) {
+        const response = await CandidatesAPI.getAll({ search: searchTerm }, { page, limit })
+        const pageData = response.data || []
+        allCandidatesData.push(...pageData)
+
+        const totalPages = response.pagination?.totalPages
+        if (typeof totalPages === 'number') {
+          hasMore = page < totalPages
+        } else {
+          hasMore = pageData.length === limit
+        }
+        page += 1
       }
-      
+
+      const mappedCandidates = allCandidatesData.map((candidate: any) => mapApiCandidate(candidate))
       setCandidates(mappedCandidates)
     } catch (error: any) {
       console.error('Error loading candidates:', error)

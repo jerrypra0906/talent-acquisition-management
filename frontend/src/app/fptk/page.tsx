@@ -322,6 +322,39 @@ export const mapApiFptk = (fptk: any): FPTK => {
 const mapAppliedCandidatesForPayload = (candidates?: any[]) => {
   if (!Array.isArray(candidates)) return []
 
+  const mapUiStatusToBackend = (status?: string) => {
+    const raw = (status || '').toString().trim()
+    if (!raw) return 'SUBMITTED'
+    const upper = raw.toUpperCase()
+    if (/^[A-Z0-9_]+$/.test(upper)) return upper
+    const lookup: Record<string, string> = {
+      'applied': 'SUBMITTED',
+      'under review': 'SCREENING',
+      'shortlisted': 'SCREENING',
+      'interview scheduled': 'INTERVIEW_SCHEDULED',
+      'interviewed': 'INTERVIEW_COMPLETED',
+      'assessment': 'TECHNICAL_TEST',
+      'offering creation': 'OFFER_PROPOSED',
+      'pending feedback': 'OFFER_APPROVED',
+      'document verification': 'DOCUMENT_VERIFICATION',
+      'offer sent': 'OFFER_SENT',
+      'offer accepted': 'OFFER_ACCEPTED',
+      'offer rejected': 'OFFER_REJECTED',
+      'mcu': 'MEDICAL_CHECKUP_COMPLETED',
+      'medical checkup scheduled': 'MEDICAL_CHECKUP_SCHEDULED',
+      'medical checkup completed': 'MEDICAL_CHECKUP_COMPLETED',
+      'contract sent': 'CONTRACT_SENT',
+      'contract signed': 'CONTRACT_SIGNED',
+      'on boarding': 'ONBOARDING',
+      'hired': 'HIRED',
+      'rejected (failed interview / assessment)': 'REJECTED',
+      'rejected': 'REJECTED',
+      'withdrawn': 'WITHDRAWN',
+      'keep in view': 'KEEP_IN_VIEW',
+    }
+    return lookup[raw.toLowerCase()] || 'SUBMITTED'
+  }
+
   return candidates
     .map((candidate: any) => {
       if (!candidate) return null
@@ -335,7 +368,7 @@ const mapAppliedCandidatesForPayload = (candidates?: any[]) => {
         candidateId: candidate.candidateId || candidate.id,
         fullName: candidate.fullName || candidate.name,
         email: candidate.email,
-        status: candidate.status || statusFromEnum,
+        status: mapUiStatusToBackend(candidate.status || statusFromEnum),
         appliedDate: candidate.appliedDate || candidate.appliedAt || new Date().toISOString(),
         source: candidate.source,
         // Include interview data if it exists
