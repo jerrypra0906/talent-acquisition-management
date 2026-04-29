@@ -5,6 +5,11 @@ import Layout from '@/components/Layout/Layout'
 import { FPTKAPI } from '@/lib/api'
 import MultiSelectDropdown from '@/components/MultiSelectDropdown'
 import { getSlaBucketIndonesiaWorkingDays } from '@/utils/indoBusinessDays'
+import {
+  displayFptkCurrentStatus,
+  isFptkClosedByCurrentStatus,
+  isFptkOpenByCurrentStatus,
+} from '@/utils/fptkPositionStatus'
 
 interface StatusCounts {
   [status: string]: number
@@ -16,6 +21,7 @@ interface SummaryRow {
   location: string
   section: string
   position: string
+  currentStatus: string
   statusFktk: string
   remark: string
   sla: string
@@ -39,17 +45,6 @@ const DEFAULT_STATUSES: string[] = [
   'Withdrawn',
   'Keep In View',
 ]
-
-const isClosedPosition = (statusFktk: string) => {
-  const s = (statusFktk || '').toString().trim().toLowerCase()
-  return (
-    s.includes('cancel') ||
-    s.includes('on boarding') ||
-    s.includes('onboarding') ||
-    s.includes('boarding') ||
-    s.includes('signing')
-  )
-}
 
 type SummaryCardKey = 'open' | 'closed' | 'sla-0-30' | 'sla-31-60' | 'sla-61-90' | 'sla-91'
 
@@ -158,6 +153,10 @@ export default function SummaryByPositionPage() {
           location: job.areaDetail || job.area || job.location || '-',
           section: job.section || '-',
           position: job.positionTitle || job.position || job.title || '-',
+          currentStatus:
+            job.currentStatus != null && String(job.currentStatus).trim() !== ''
+              ? String(job.currentStatus).trim()
+              : '',
           statusFktk: job.statusFktk || '-',
           remark: job.remark || '-',
           sla: slaBucket,
@@ -202,9 +201,9 @@ export default function SummaryByPositionPage() {
     if (!activeCard) return dropdownFilteredRows
     switch (activeCard) {
       case 'open':
-        return dropdownFilteredRows.filter((r) => !isClosedPosition(r.statusFktk))
+        return dropdownFilteredRows.filter((r) => isFptkOpenByCurrentStatus(r.currentStatus))
       case 'closed':
-        return dropdownFilteredRows.filter((r) => isClosedPosition(r.statusFktk))
+        return dropdownFilteredRows.filter((r) => isFptkClosedByCurrentStatus(r.currentStatus))
       case 'sla-0-30':
         return dropdownFilteredRows.filter((r) => r.sla === '0-30 Days')
       case 'sla-31-60':
@@ -218,8 +217,8 @@ export default function SummaryByPositionPage() {
     }
   }, [dropdownFilteredRows, activeCard])
 
-  const openPositionCount = dropdownFilteredRows.filter((r) => !isClosedPosition(r.statusFktk)).length
-  const closedPositionCount = dropdownFilteredRows.filter((r) => isClosedPosition(r.statusFktk)).length
+  const openPositionCount = dropdownFilteredRows.filter((r) => isFptkOpenByCurrentStatus(r.currentStatus)).length
+  const closedPositionCount = dropdownFilteredRows.filter((r) => isFptkClosedByCurrentStatus(r.currentStatus)).length
 
   const slaCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -318,12 +317,12 @@ export default function SummaryByPositionPage() {
           <button type="button" onClick={() => toggleCardFilter('open')} className={cardClass('open')}>
             <div className="text-sm font-medium text-gray-500">Open Position</div>
             <div className="mt-2 text-3xl font-semibold text-gray-900">{openPositionCount}</div>
-            <div className="mt-1 text-xs text-gray-400">By Status FKTK • with dropdown filters</div>
+            <div className="mt-1 text-xs text-gray-400">By Current Status (same as Position page) • with dropdown filters</div>
           </button>
           <button type="button" onClick={() => toggleCardFilter('closed')} className={cardClass('closed')}>
             <div className="text-sm font-medium text-gray-500">Closed Position</div>
             <div className="mt-2 text-3xl font-semibold text-gray-900">{closedPositionCount}</div>
-            <div className="mt-1 text-xs text-gray-400">By Status FKTK • with dropdown filters</div>
+            <div className="mt-1 text-xs text-gray-400">Close, Cancel, or Internal Movement • with dropdown filters</div>
           </button>
           <button type="button" onClick={() => toggleCardFilter('sla-0-30')} className={cardClass('sla-0-30')}>
             <div className="text-sm font-medium text-gray-500">SLA 0-30 Days</div>
@@ -371,6 +370,7 @@ export default function SummaryByPositionPage() {
                   <th onClick={() => handleSort('location')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location {sortIndicator('location')}</th>
                   <th onClick={() => handleSort('section')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section {sortIndicator('section')}</th>
                   <th onClick={() => handleSort('position')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position {sortIndicator('position')}</th>
+                  <th onClick={() => handleSort('currentStatus')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Status {sortIndicator('currentStatus')}</th>
                   <th onClick={() => handleSort('statusFktk')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status FKTK {sortIndicator('statusFktk')}</th>
                   <th onClick={() => handleSort('remark')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remark {sortIndicator('remark')}</th>
                   <th onClick={() => handleSort('sla')} className="cursor-pointer px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SLA {sortIndicator('sla')}</th>
@@ -387,6 +387,9 @@ export default function SummaryByPositionPage() {
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.location}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.section}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.position}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                      {displayFptkCurrentStatus(row.currentStatus)}
+                    </td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.statusFktk}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate" title={row.remark}>{row.remark}</td>
                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{row.sla}</td>
@@ -401,14 +404,14 @@ export default function SummaryByPositionPage() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={8 + allStatuses.length} className="px-4 py-6 text-center text-sm text-gray-500">
+                    <td colSpan={9 + allStatuses.length} className="px-4 py-6 text-center text-sm text-gray-500">
                       No data available. Create some positions and applied candidates to see the summary.
                     </td>
                   </tr>
                 )}
                 {rows.length > 0 && sortedRows.length === 0 && (
                   <tr>
-                    <td colSpan={8 + allStatuses.length} className="px-4 py-6 text-center text-sm text-gray-500">
+                    <td colSpan={9 + allStatuses.length} className="px-4 py-6 text-center text-sm text-gray-500">
                       No rows match the selected card filter. Clear the card or adjust Priority, Division, or Location.
                     </td>
                   </tr>
