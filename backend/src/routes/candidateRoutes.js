@@ -3,12 +3,27 @@ const router = express.Router();
 const { authenticate, authorize, checkOwnership } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const candidateService = require('../services/candidateService');
+const prisma = require('../config/database');
 const { validationRules, validate } = require('../middleware/validator');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const documentService = require('../services/documentService');
 const candidateFormTokenService = require('../services/candidateFormTokenService');
 const { parseSpreadsheet, sendTemplate } = require('../utils/spreadsheet');
 const bulkImportService = require('../services/bulkImportService');
+
+function buildHiringManagerFptkScope(user = {}) {
+  const firstName = String(user.firstName || '').trim();
+  const lastName = String(user.lastName || '').trim();
+  const email = String(user.email || '').trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const values = Array.from(new Set([firstName, fullName, email].filter(Boolean)));
+  if (values.length === 0) return null;
+  return {
+    OR: values.map((value) => ({
+      hiringManager: { equals: value, mode: 'insensitive' },
+    })),
+  };
+}
 
 /**
  * @route   GET /api/candidates/me
@@ -441,6 +456,48 @@ router.get(
   validationRules.uuidParam('id'),
   validate,
   asyncHandler(async (req, res) => {
+    const userRole = req.user.role;
+    if (userRole === 'DEPARTMENT_HEAD' || userRole === 'Head of Division') {
+      const allowed = await prisma.candidate.findFirst({
+        where: {
+          id: req.params.id,
+          user: { division: req.user.division || '' },
+        },
+        select: { id: true },
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only access candidates in your division',
+        });
+      }
+    } else if (userRole === 'HIRING_MANAGER') {
+      const hmScope = buildHiringManagerFptkScope(req.user);
+      if (!hmScope) {
+        return res.status(403).json({
+          success: false,
+          message: 'Missing hiring manager identity for candidate access',
+        });
+      }
+      const allowed = await prisma.candidate.findFirst({
+        where: {
+          id: req.params.id,
+          applications: {
+            some: {
+              fptk: hmScope,
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only access candidates linked to your positions',
+        });
+      }
+    }
+
     const candidate = await candidateService.getCandidateProfile(req.params.id);
     console.log('GET CANDIDATE - Returning candidate:', JSON.stringify({
       id: candidate.id,
