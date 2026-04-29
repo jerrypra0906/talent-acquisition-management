@@ -1131,6 +1131,7 @@ async function getSummaryByPosition(user = null) {
       section: true,
       positionTitle: true,
       position: true,
+      currentStatus: true,
       statusFktk: true,
       remark: true,
       location: true,
