@@ -10,6 +10,9 @@ import {
   CalendarDaysIcon,
   DocumentTextIcon,
   ArrowPathIcon,
+  XCircleIcon,
+  NoSymbolIcon,
+  ArrowLeftOnRectangleIcon,
 } from '@heroicons/react/24/outline'
 import { DashboardStats, PositionStatusByLocation, OpenPositionProgress, SLALocation } from '@/types'
 import { DashboardAPI, CandidatesAPI, FPTKAPI, ApplicationsAPI } from '@/lib/api'
@@ -200,6 +203,21 @@ const getHiredInRangeItems = (positions: any[], range: DateRange): DashboardList
     })
 }
 
+const getHiredAllTimeItems = (positions: any[]): DashboardListItem[] => {
+  return positions
+    .filter((position) => normalizeUiCurrentStatus(position?.currentStatus || position?.status) === 'close')
+    .map((position) => {
+      const date = parseDateValue(position?.updatedAt)
+      return {
+        id: position?.id,
+        kind: position?.id ? ('fptk' as const) : undefined,
+        title: position?.title || position?.position || 'Unknown Position',
+        subtitle: position?.department ? `${position.department} • ${position.location || 'N/A'}` : position?.location,
+        meta: date ? `Updated ${date.toLocaleDateString()}` : undefined,
+      }
+    })
+}
+
 const asUpperStatus = (value: any) => (value || '').toString().trim().toUpperCase()
 
 const appActivityTs = (a: { updatedAt?: string | null; appliedAt?: string | null } | null | undefined) =>
@@ -210,11 +228,21 @@ const fptkActivityTs = (p: { updatedAt?: string | null; createdAt?: string | nul
 const appInGroupInRange = (a: any, group: Set<string>, range: DateRange) =>
   group.has(asUpperStatus(a?.status)) && itemTimestampInRange(appActivityTs(a), range)
 
+const appInGroup = (a: any, group: Set<string>) => group.has(asUpperStatus(a?.status))
+
+const DASHBOARD_COMPARE_OFF_DELTA = {
+  formattedChange: '—',
+  sentiment: 'neutral' as const,
+}
+
 const APPLICATION_STATUS_GROUPS = {
-  totalCandidate: new Set(['SUBMITTED', 'SCREENING', 'OFFER_REJECTED']),
-  interview: new Set(['INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'TECHNICAL_TEST', 'REJECTED']),
-  offeringStage: new Set(['OFFER_PROPOSED', 'OFFER_APPROVED', 'OFFER_ACCEPTED', 'WITHDRAWN']),
+  totalCandidate: new Set(['SUBMITTED', 'SCREENING']),
+  interview: new Set(['INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'TECHNICAL_TEST']),
+  offeringStage: new Set(['OFFER_PROPOSED', 'OFFER_APPROVED', 'OFFER_ACCEPTED']),
   mcu: new Set(['MEDICAL_CHECKUP_COMPLETED']),
+  offerRejected: new Set(['OFFER_REJECTED']),
+  rejected: new Set(['REJECTED']),
+  withdrawn: new Set(['WITHDRAWN']),
 }
 
 const buildApplicationInsights = (
@@ -320,6 +348,8 @@ export default function Dashboard() {
   const [openPositionsPage, setOpenPositionsPage] = useState(1)
 
   const [timeMode, setTimeMode] = useState<DashboardTimeMode>('month')
+  /** When true, stat cards use selected week/month/custom vs previous period; when false, Daily Operations (no date window). */
+  const [compareToPrevious, setCompareToPrevious] = useState(false)
   const [weekValue, setWeekValue] = useState(() => toWeekInputValue())
   const [monthValue, setMonthValue] = useState(() => toMonthInputValue())
   const [customStart, setCustomStart] = useState(() => {
@@ -371,21 +401,22 @@ export default function Dashboard() {
   )
 
   const openPositionItems = useMemo<DashboardListItem[]>(() => {
-    const range = activePeriod.current
-    return filteredPositions
-      .filter(
-        (position) =>
-          isOpenCurrentStatusLabel(position?.currentStatus || position?.status) &&
-          itemTimestampInRange(fptkActivityTs(position), range)
-      )
-      .map((position) => ({
-        id: position?.id,
-        kind: 'fptk' as const,
-        title: position?.title || position?.position || 'Unknown Position',
-        subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
-        meta: position?.currentStatus || position?.status || 'N/A',
-      }))
-  }, [filteredPositions, activePeriod])
+    const openOnly = filteredPositions.filter((position) =>
+      isOpenCurrentStatusLabel(position?.currentStatus || position?.status)
+    )
+    const rows = compareToPrevious
+      ? openOnly.filter((position) =>
+          itemTimestampInRange(fptkActivityTs(position), activePeriod.current)
+        )
+      : openOnly
+    return rows.map((position) => ({
+      id: position?.id,
+      kind: 'fptk' as const,
+      title: position?.title || position?.position || 'Unknown Position',
+      subtitle: `${position?.department || 'N/A'} • ${position?.location || 'N/A'}`,
+      meta: position?.currentStatus || position?.status || 'N/A',
+    }))
+  }, [filteredPositions, activePeriod, compareToPrevious])
 
   const closedPositionItems = useMemo<DashboardListItem[]>(() => {
     return filteredPositions
@@ -412,8 +443,11 @@ export default function Dashboard() {
   }, [filteredPositions])
 
   const hiredInPeriodItems = useMemo(
-    () => getHiredInRangeItems(filteredPositions, activePeriod.current),
-    [filteredPositions, activePeriod]
+    () =>
+      compareToPrevious
+        ? getHiredInRangeItems(filteredPositions, activePeriod.current)
+        : getHiredAllTimeItems(filteredPositions),
+    [filteredPositions, activePeriod, compareToPrevious]
   )
 
   const applicationsScoped = useMemo(() => {
@@ -445,36 +479,84 @@ export default function Dashboard() {
     () =>
       applicationsScoped
         .filter((a: any) =>
-          appInGroupInRange(a, APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.current)
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.totalCandidate)
         )
         .map(mapApplicationToDetailItem),
-    [applicationsScoped, activePeriod]
+    [applicationsScoped, activePeriod, compareToPrevious]
   )
 
   const interviewItems = useMemo(
     () =>
       applicationsScoped
-        .filter((a: any) => appInGroupInRange(a, APPLICATION_STATUS_GROUPS.interview, activePeriod.current))
+        .filter((a: any) =>
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.interview, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.interview)
+        )
         .map(mapApplicationToDetailItem),
-    [applicationsScoped, activePeriod]
+    [applicationsScoped, activePeriod, compareToPrevious]
   )
 
   const offeringStageItems = useMemo(
     () =>
       applicationsScoped
         .filter((a: any) =>
-          appInGroupInRange(a, APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.current)
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.offeringStage)
         )
         .map(mapApplicationToDetailItem),
-    [applicationsScoped, activePeriod]
+    [applicationsScoped, activePeriod, compareToPrevious]
   )
 
   const mcuItems = useMemo(
     () =>
       applicationsScoped
-        .filter((a: any) => appInGroupInRange(a, APPLICATION_STATUS_GROUPS.mcu, activePeriod.current))
+        .filter((a: any) =>
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.mcu, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.mcu)
+        )
         .map(mapApplicationToDetailItem),
-    [applicationsScoped, activePeriod]
+    [applicationsScoped, activePeriod, compareToPrevious]
+  )
+
+  const offerRejectedItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) =>
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.offerRejected, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.offerRejected)
+        )
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod, compareToPrevious]
+  )
+
+  const rejectedItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) =>
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.rejected, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.rejected)
+        )
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod, compareToPrevious]
+  )
+
+  const withdrawnItems = useMemo(
+    () =>
+      applicationsScoped
+        .filter((a: any) =>
+          compareToPrevious
+            ? appInGroupInRange(a, APPLICATION_STATUS_GROUPS.withdrawn, activePeriod.current)
+            : appInGroup(a, APPLICATION_STATUS_GROUPS.withdrawn)
+        )
+        .map(mapApplicationToDetailItem),
+    [applicationsScoped, activePeriod, compareToPrevious]
   )
 
   const countOpenFptkInRange = useCallback(
@@ -504,56 +586,101 @@ export default function Dashboard() {
 
   const wowOpenPositions = useMemo(
     () =>
-      periodOverPeriodChange(
-        countOpenFptkInRange(activePeriod.current),
-        countOpenFptkInRange(activePeriod.previous)
-      ),
-    [countOpenFptkInRange, activePeriod]
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countOpenFptkInRange(activePeriod.current),
+            countOpenFptkInRange(activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countOpenFptkInRange, activePeriod]
   )
 
   const wowTotalCandidateStatus = useMemo(
     () =>
-      periodOverPeriodChange(
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.current),
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.previous)
-      ),
-    [countAppGroupInRange, activePeriod]
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.totalCandidate, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
   )
 
   const wowInterviewStatus = useMemo(
     () =>
-      periodOverPeriodChange(
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.interview, activePeriod.current),
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.interview, activePeriod.previous)
-      ),
-    [countAppGroupInRange, activePeriod]
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.interview, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.interview, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
   )
 
   const wowOfferingStatus = useMemo(
     () =>
-      periodOverPeriodChange(
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.current),
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.previous)
-      ),
-    [countAppGroupInRange, activePeriod]
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.offeringStage, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
   )
 
   const wowMcuStatus = useMemo(
     () =>
-      periodOverPeriodChange(
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.mcu, activePeriod.current),
-        countAppGroupInRange(APPLICATION_STATUS_GROUPS.mcu, activePeriod.previous)
-      ),
-    [countAppGroupInRange, activePeriod]
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.mcu, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.mcu, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
+  )
+
+  const wowOfferRejected = useMemo(
+    () =>
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.offerRejected, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.offerRejected, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
+  )
+
+  const wowRejected = useMemo(
+    () =>
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.rejected, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.rejected, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
+  )
+
+  const wowWithdrawn = useMemo(
+    () =>
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.withdrawn, activePeriod.current),
+            countAppGroupInRange(APPLICATION_STATUS_GROUPS.withdrawn, activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countAppGroupInRange, activePeriod]
   )
 
   const wowHiredRolling = useMemo(
     () =>
-      periodOverPeriodChange(
-        countHiredCloseInRange(activePeriod.current),
-        countHiredCloseInRange(activePeriod.previous)
-      ),
-    [countHiredCloseInRange, activePeriod]
+      compareToPrevious
+        ? periodOverPeriodChange(
+            countHiredCloseInRange(activePeriod.current),
+            countHiredCloseInRange(activePeriod.previous)
+          )
+        : DASHBOARD_COMPARE_OFF_DELTA,
+    [compareToPrevious, countHiredCloseInRange, activePeriod]
   )
 
   const openPositionsHeadline = useMemo(
@@ -590,6 +717,15 @@ export default function Dashboard() {
     () => hiredInPeriodItems.length,
     [hiredInPeriodItems.length]
   )
+
+  const offerRejectedHeadline = useMemo(
+    () => offerRejectedItems.length,
+    [offerRejectedItems.length]
+  )
+
+  const rejectedHeadline = useMemo(() => rejectedItems.length, [rejectedItems.length])
+
+  const withdrawnHeadline = useMemo(() => withdrawnItems.length, [withdrawnItems.length])
 
   const customRangeInvalid = timeMode === 'custom' && !periodBounds
 
@@ -695,6 +831,27 @@ export default function Dashboard() {
         change: wowHiredRolling.formattedChange,
         changeType: wowHiredRolling.sentiment,
       },
+      {
+        name: 'Offer Rejected',
+        value: offerRejectedHeadline.toString(),
+        icon: XCircleIcon,
+        change: wowOfferRejected.formattedChange,
+        changeType: wowOfferRejected.sentiment,
+      },
+      {
+        name: 'Rejected',
+        value: rejectedHeadline.toString(),
+        icon: NoSymbolIcon,
+        change: wowRejected.formattedChange,
+        changeType: wowRejected.sentiment,
+      },
+      {
+        name: 'Withdrawn',
+        value: withdrawnHeadline.toString(),
+        icon: ArrowLeftOnRectangleIcon,
+        change: wowWithdrawn.formattedChange,
+        changeType: wowWithdrawn.sentiment,
+      },
     ],
     [
       openPositionsHeadline,
@@ -709,6 +866,13 @@ export default function Dashboard() {
       wowMcuStatus,
       hiredThisMonthHeadline,
       wowHiredRolling,
+      offerRejectedHeadline,
+      wowOfferRejected,
+      rejectedHeadline,
+      wowRejected,
+      withdrawnHeadline,
+      wowWithdrawn,
+      compareToPrevious,
     ]
   )
 
@@ -1133,7 +1297,32 @@ useEffect(() => {
           className="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4"
           data-tour="dashboard-time-filter"
         >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-gray-800">Compare to Previous</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={compareToPrevious}
+              aria-label="Compare to Previous"
+              onClick={() => setCompareToPrevious((v) => !v)}
+              className={`relative h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
+                compareToPrevious ? 'bg-indigo-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${
+                  compareToPrevious ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <div
+            className={`mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap ${
+              compareToPrevious ? '' : 'opacity-45 pointer-events-none select-none'
+            }`}
+            aria-hidden={!compareToPrevious}
+          >
             <div className="inline-flex rounded-md shadow-sm">
                 {(['week', 'month', 'custom'] as const).map((m, index, arr) => (
                   <button
@@ -1197,7 +1386,7 @@ useEffect(() => {
                 </div>
               )}
           </div>
-          {customRangeInvalid ? (
+          {compareToPrevious && customRangeInvalid ? (
             <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
               Invalid or incomplete custom range. Showing current month until the range is valid.
             </p>
@@ -1249,13 +1438,19 @@ useEffect(() => {
                     items = offeringStageItems
                   } else if (item.name === 'MCU') {
                     items = mcuItems
-                  } else                 if (item.name === 'Hired') {
+                  } else if (item.name === 'Offer Rejected') {
+                    items = offerRejectedItems
+                  } else if (item.name === 'Rejected') {
+                    items = rejectedItems
+                  } else if (item.name === 'Withdrawn') {
+                    items = withdrawnItems
+                  } else if (item.name === 'Hired') {
                     const pos = await fetchAllFptksForDashboard()
                     setAllPositions(pos)
-                    items = getHiredInRangeItems(
-                      filterPositionsByPriority(pos, priorityFilter),
-                      activePeriod.current
-                    )
+                    const scoped = filterPositionsByPriority(pos, priorityFilter)
+                    items = compareToPrevious
+                      ? getHiredInRangeItems(scoped, activePeriod.current)
+                      : getHiredAllTimeItems(scoped)
                   }
 
                   if (!items.length) {
@@ -1285,17 +1480,19 @@ useEffect(() => {
               </dt>
               <dd className="ml-16 flex items-baseline pb-6 sm:pb-7">
                 <p className="text-2xl font-semibold text-gray-900 underline decoration-dotted">{item.value}</p>
-                <p
-                  className={`ml-2 flex items-baseline text-sm font-semibold ${
-                    item.changeType === 'positive'
-                      ? 'text-green-600'
-                      : item.changeType === 'negative'
-                        ? 'text-red-600'
-                        : 'text-gray-500'
-                  }`}
-                >
-                  {item.change}
-                </p>
+                {compareToPrevious ? (
+                  <p
+                    className={`ml-2 flex items-baseline text-sm font-semibold ${
+                      item.changeType === 'positive'
+                        ? 'text-green-600'
+                        : item.changeType === 'negative'
+                          ? 'text-red-600'
+                          : 'text-gray-500'
+                    }`}
+                  >
+                    {item.change}
+                  </p>
+                ) : null}
               </dd>
             </button>
           ))}
