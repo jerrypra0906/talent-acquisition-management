@@ -1145,6 +1145,65 @@ async function getAllFPTKs(filters, pagination, user = null) {
   };
 }
 
+function resolveFptkPositionTitle(row) {
+  const raw = row.position || row.positionTitle || row.department;
+  if (raw && String(raw).trim().length > 0) {
+    return String(raw).trim();
+  }
+  return `Position ${String(row.id || '').slice(0, 8)}`;
+}
+
+/**
+ * Lightweight FPTK rows for position picker (candidate add/edit).
+ */
+async function getFptkPositionOptions(filters, pagination, user = null) {
+  const { page = 1, limit = 100 } = pagination;
+  const skip = (page - 1) * limit;
+
+  const where = buildInternalFptkListWhere(filters, user);
+
+  const [rows, total] = await Promise.all([
+    prisma.fPTK.findMany({
+      where,
+      skip,
+      take: limit,
+      select: {
+        id: true,
+        fptkNumber: true,
+        positionTitle: true,
+        position: true,
+        department: true,
+        division: true,
+        currentStatus: true,
+        status: true,
+      },
+      orderBy: { positionTitle: 'asc' },
+    }),
+    prisma.fPTK.count({ where }),
+  ]);
+
+  const data = rows.map((row) => ({
+    id: row.id,
+    fptkNumber: row.fptkNumber,
+    title: resolveFptkPositionTitle(row),
+    positionTitle: row.positionTitle,
+    position: row.position,
+    department: row.department || '',
+    division: row.division || '',
+    currentStatus: row.currentStatus || row.status || '',
+  }));
+
+  return {
+    data,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 0,
+    },
+  };
+}
+
 async function getSummaryByPosition(user = null) {
   // Role-based filtering (same intent as getAllFPTKs / dashboard)
   const fptkWhere = {};
@@ -1707,6 +1766,7 @@ module.exports = {
   createFPTK,
   getFPTKById,
   getAllFPTKs,
+  getFptkPositionOptions,
   getFptkCurrentStatusCounts,
   getSummaryByPosition,
   updateFPTK,

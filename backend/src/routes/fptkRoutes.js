@@ -148,6 +148,41 @@ router.get(
 );
 
 /**
+ * @route   GET /api/fptk/position-options
+ * @desc    Lightweight FPTK list for candidate position picker (paginated)
+ * @access  Private
+ */
+router.get(
+  '/position-options',
+  authenticate,
+  authorize('TA_TEAM', 'HRBP', 'SUPER_ADMIN', 'HIRING_MANAGER', 'CHRO', 'DEPARTMENT_HEAD'),
+  validationRules.pagination,
+  validate,
+  asyncHandler(async (req, res) => {
+    const filters = {
+      search: req.query.search,
+      department: req.query.department,
+      pt: req.query.pt,
+      area: req.query.area,
+      areaDetail: req.query.areaDetail,
+    };
+
+    const pagination = {
+      page: parseInt(req.query.page, 10) || 1,
+      limit: parseInt(req.query.limit, 10) || 100,
+    };
+
+    const result = await fptkService.getFptkPositionOptions(filters, pagination, req.user);
+
+    res.json({
+      success: true,
+      data: result.data,
+      pagination: result.pagination,
+    });
+  })
+);
+
+/**
  * @route   GET /api/fptk/counts-by-current-status
  * @desc    Row counts per Current Status (scoped like list; optional search only)
  * @access  Private

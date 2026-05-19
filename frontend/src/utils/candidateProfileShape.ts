@@ -24,6 +24,16 @@ export function parseLanguagesData(candidate: any): Record<string, any> | null {
   return parseJsonObject(candidate.languages)
 }
 
+/** Years of experience from API top-level field or languages JSON blob. */
+export function getCandidateYearsOfExperience(candidate: any): number {
+  if (!candidate) return 0
+  const languagesData = parseLanguagesData(candidate)
+  const raw = candidate.yearsOfExperience ?? languagesData?.yearsOfExperience
+  if (raw === undefined || raw === null || raw === '') return 0
+  const num = typeof raw === 'number' ? raw : parseInt(String(raw).trim(), 10)
+  return Number.isNaN(num) || num < 0 ? 0 : num
+}
+
 function parseFormDataDiri(candidate: any): Record<string, any> | null {
   if (!candidate?.formDataDiri) return null
   return parseJsonObject(candidate.formDataDiri)

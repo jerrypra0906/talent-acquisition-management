@@ -72,6 +72,77 @@ api.interceptors.request.use(
   }
 )
 
+function getStoredRefreshToken(): string | null {
+  try {
+    const value = localStorage.getItem('refreshToken')
+    if (!value || value === 'undefined' || value === 'null') {
+      return null
+    }
+    return value
+  } catch {
+    return null
+  }
+}
+
+function clearAuthAndRedirect() {
+  try {
+    localStorage.removeItem('authToken')
+    localStorage.removeItem('refreshToken')
+  } catch (e) {
+    console.warn('Could not clear auth tokens during auth failure:', e)
+  }
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
+
+function isAuthRefreshRequest(config: { url?: string } | undefined): boolean {
+  const url = config?.url || ''
+  return url.includes('/auth/refresh')
+}
+
+function isAuthLoginRequest(config: { url?: string } | undefined): boolean {
+  const url = config?.url || ''
+  return url.includes('/auth/login')
+}
+
+let refreshPromise: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) {
+    return refreshPromise
+  }
+
+  refreshPromise = (async () => {
+    const refreshToken = getStoredRefreshToken()
+    const refreshRes = await api.post('/auth/refresh', refreshToken ? { refreshToken } : {})
+    const payload = refreshRes?.data?.data
+    const newAccessToken = payload?.accessToken
+    const newRefreshToken = payload?.refreshToken
+
+    if (!newAccessToken) {
+      return null
+    }
+
+    try {
+      localStorage.setItem('authToken', newAccessToken)
+      if (newRefreshToken) {
+        localStorage.setItem('refreshToken', newRefreshToken)
+      }
+    } catch (e) {
+      console.warn('Could not persist refreshed tokens:', e)
+    }
+
+    return newAccessToken
+  })()
+    .catch(() => null)
+    .finally(() => {
+      refreshPromise = null
+    })
+
+  return refreshPromise
+}
+
 // Response interceptor to handle errors
 api.interceptors.response.use(
   (response) => response,
@@ -79,44 +150,32 @@ api.interceptors.response.use(
     const status = error.response?.status
     const originalRequest = error.config
 
-    // Avoid infinite loops
-    if (!originalRequest || originalRequest.__isRetryRequest) {
+    if (!originalRequest || typeof window === 'undefined' || status !== 401) {
       return Promise.reject(error)
     }
 
-    // If access token expired, try refresh once then retry original request
-    if (status === 401 && typeof window !== 'undefined') {
-      try {
-        ;(originalRequest as any).__isRetryRequest = true
-
-        const refreshRes = await api.post('/auth/refresh', {})
-        const newAccessToken = refreshRes?.data?.data?.accessToken
-        if (newAccessToken) {
-          try {
-            localStorage.setItem('authToken', newAccessToken)
-          } catch (e) {
-            console.warn('Could not persist refreshed access token:', e)
-          }
-          originalRequest.headers = originalRequest.headers || {}
-          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
-          return api.request(originalRequest)
-        }
-      } catch (refreshErr) {
-        // fallthrough to logout
-      }
-
-      // Refresh failed => logout
-      try {
-        localStorage.removeItem('authToken')
-        localStorage.removeItem('refreshToken')
-      } catch (e) {
-        console.warn('Could not clear auth tokens during 401:', e)
-      }
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
-      }
+    // Never retry refresh/login themselves — that causes an infinite refresh loop.
+    if (isAuthRefreshRequest(originalRequest) || isAuthLoginRequest(originalRequest)) {
+      clearAuthAndRedirect()
+      return Promise.reject(error)
     }
 
+    // Already retried once after refresh; force logout instead of looping.
+    if ((originalRequest as { __isRetryRequest?: boolean }).__isRetryRequest) {
+      clearAuthAndRedirect()
+      return Promise.reject(error)
+    }
+
+    ;(originalRequest as { __isRetryRequest?: boolean }).__isRetryRequest = true
+
+    const newAccessToken = await refreshAccessToken()
+    if (newAccessToken) {
+      originalRequest.headers = originalRequest.headers || {}
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+      return api.request(originalRequest)
+    }
+
+    clearAuthAndRedirect()
     return Promise.reject(error)
   }
 )
@@ -265,6 +324,19 @@ export const FPTKAPI = {
     pagination?: { page?: number; limit?: number }
   ) {
     const res = await api.get('/fptk', { params: { ...filters, ...pagination } })
+    return res.data
+  },
+  async getPositionOptions(
+    filters?: {
+      search?: string
+      department?: string
+      pt?: string
+      area?: string
+      areaDetail?: string
+    },
+    pagination?: { page?: number; limit?: number }
+  ) {
+    const res = await api.get('/fptk/position-options', { params: { ...filters, ...pagination } })
     return res.data
   },
   async getCountsByCurrentStatus(
