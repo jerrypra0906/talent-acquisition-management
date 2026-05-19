@@ -1,6 +1,7 @@
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
 const { buildTokenizedSearch } = require('../utils/search');
+const { withActiveCandidateOnApplication } = require('../utils/candidateVisibility');
 
 function buildHiringManagerScopeFromUser(user = null) {
   if (!user) return null;
@@ -132,7 +133,7 @@ async function getApplicationById(applicationId) {
     },
   });
 
-  if (!application) {
+  if (!application || application.candidate?.isDeleted) {
     throw new Error('Application not found');
   }
 
@@ -145,6 +146,22 @@ async function getApplicationById(applicationId) {
 async function getCandidateApplications(candidateId, pagination) {
   const { page = 1, limit = 20 } = pagination;
   const skip = (page - 1) * limit;
+
+  const activeCandidate = await prisma.candidate.findFirst({
+    where: { id: candidateId, isDeleted: false },
+    select: { id: true },
+  });
+  if (!activeCandidate) {
+    return {
+      applications: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+      },
+    };
+  }
 
   const [applications, total] = await Promise.all([
     prisma.application.findMany({
@@ -284,9 +301,11 @@ async function getAllApplications(filters, pagination, user = null) {
     }
   }
 
+  const activeWhere = withActiveCandidateOnApplication(where);
+
   const [applications, total] = await Promise.all([
     prisma.application.findMany({
-      where,
+      where: activeWhere,
       skip,
       take: limit,
       include: {
@@ -328,7 +347,7 @@ async function getAllApplications(filters, pagination, user = null) {
       },
       orderBy: { appliedAt: 'desc' },
     }),
-    prisma.application.count({ where }),
+    prisma.application.count({ where: activeWhere }),
   ]);
 
   return {
@@ -509,25 +528,27 @@ async function getApplicationStatistics(filters = {}) {
     where.appliedAt = { ...where.appliedAt, lte: new Date(filters.dateTo) };
   }
 
+  const activeWhere = withActiveCandidateOnApplication(where);
+
   const [
     total,
     byStatus,
     byStage,
     slaBreached,
   ] = await Promise.all([
-    prisma.application.count({ where }),
+    prisma.application.count({ where: activeWhere }),
     prisma.application.groupBy({
       by: ['status'],
-      where,
+      where: activeWhere,
       _count: true,
     }),
     prisma.application.groupBy({
       by: ['currentStage'],
-      where,
+      where: activeWhere,
       _count: true,
     }),
     prisma.application.count({
-      where: { ...where, slaBreached: true },
+      where: { ...activeWhere, slaBreached: true },
     }),
   ]);
 
