@@ -22,7 +22,7 @@ import { saveCandidateLink } from '@/utils/candidateLink'
 import { matchesTokenizedSearch } from '@/utils/search'
 import { CandidatesAPI, MenuAccessAPI } from '@/lib/api'
 import BulkUploadModal from '@/components/BulkUploadModal'
-import { getCandidateDivisions, parseLanguagesData } from '@/utils/candidateProfileShape'
+import { getCandidateDivisions, getCandidateYearsOfExperience, parseLanguagesData } from '@/utils/candidateProfileShape'
 
 const mapEnumToRole = (role: string): string => {
   if (!role) return role
@@ -252,6 +252,7 @@ export const mapApiCandidate = (candidate: any): Candidate => {
   )
 
   const drivingLicense = normalizeDrivingLicense(candidate.drivingLicense, formDataDiri)
+  const yearsOfExperienceValue = getCandidateYearsOfExperience(candidate)
 
   return {
     id: candidate.id,
@@ -290,7 +291,7 @@ export const mapApiCandidate = (candidate: any): Candidate => {
     professionalInfo: {
       currentPosition: normalizeValue(candidate.currentJobTitle || candidate.currentPosition, formDataDiri?.currentPosition),
       currentCompany: normalizeValue(candidate.currentCompany, formDataDiri?.currentCompany),
-      experience: candidate.yearsOfExperience || 0,
+      experience: yearsOfExperienceValue,
       skills: candidate.skills || formDataDiri?.skills || [],
       education: candidate.educations || formDataDiri?.education || [],
       workHistory: candidate.workExperiences || formDataDiri?.workExperience || [],
@@ -324,7 +325,11 @@ export const mapApiCandidate = (candidate: any): Candidate => {
     weight,
     permanentAddress: normalizeValue(candidate.permanentAddress, formDataDiri?.permanentAddress),
     drivingLicense,
-    yearsOfExperience: candidate.yearsOfExperience?.toString() || '',
+    yearsOfExperience: (() => {
+      const raw = candidate.yearsOfExperience ?? languagesData?.yearsOfExperience
+      if (raw === undefined || raw === null || String(raw).trim() === '') return ''
+      return String(yearsOfExperienceValue)
+    })(),
     languages: languagesData ?? (typeof candidate.languages === 'object' ? candidate.languages : null),
   }
 }
@@ -581,7 +586,12 @@ export default function CandidatesPage() {
         division: divisionValue,
         divisionList: divisionArray,
         positionAppliedFor: Array.isArray(candidateData.positionAppliedFor) ? candidateData.positionAppliedFor : (candidateData.positionAppliedFor ? [candidateData.positionAppliedFor] : []),
-        yearsOfExperience: candidateData.yearsOfExperience || null,
+        yearsOfExperience:
+          candidateData.yearsOfExperience !== undefined &&
+          candidateData.yearsOfExperience !== null &&
+          String(candidateData.yearsOfExperience).trim() !== ''
+            ? candidateData.yearsOfExperience
+            : null,
         height: candidateData.height || null,
         weight: candidateData.weight || null,
         taxNumber: candidateData.taxNumber || null,
@@ -777,7 +787,12 @@ export default function CandidatesPage() {
           ? candidateData.division.map((div: string) => div.trim()).filter((div: string) => !!div)
           : (typeof candidateData.division === 'string' && candidateData.division.trim() ? [candidateData.division.trim()] : []),
         positionAppliedFor: candidateData.positionAppliedFor || [],
-        yearsOfExperience: candidateData.yearsOfExperience || null,
+        yearsOfExperience:
+          candidateData.yearsOfExperience !== undefined &&
+          candidateData.yearsOfExperience !== null &&
+          String(candidateData.yearsOfExperience).trim() !== ''
+            ? candidateData.yearsOfExperience
+            : null,
         height: candidateData.height || null,
         weight: candidateData.weight || null,
         taxNumber: candidateData.taxNumber || null,

@@ -3,7 +3,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, CloudArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline'
-import { FPTKAPI, MasterDivisionAPI } from '@/lib/api'
+import { MasterDivisionAPI } from '@/lib/api'
+import { loadSelectablePositionOptions, type PositionOption } from '@/lib/fptkPositionOptions'
+import PositionAppliedForField, { type PositionPickerMeta } from '@/components/PositionAppliedForField'
 import { compressFile, formatFileSize } from '@/utils/fileCompression'
 
 interface FileSelection {
@@ -18,10 +20,8 @@ interface EnhancedAddCandidateModalProps {
   onSave: (candidateData: any, files: FileSelection) => void | Promise<void>
 }
 
-export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: EnhancedAddCandidateModalProps) {
-  const [activeTab, setActiveTab] = useState('personal')
-  const [formData, setFormData] = useState({
-    // Personal Information
+function createInitialFormData() {
+  return {
     fullName: '',
     position: '',
     placeOfBirth: '',
@@ -41,21 +41,23 @@ export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: E
     permanentAddress: '',
     phone: '',
     email: '',
-    
-    // Professional Information
     yearsOfExperience: '',
     skills: [] as string[],
     division: [] as string[],
     positionAppliedFor: [] as string[],
-    
-    // Files
     cvFile: null as File | null,
     formDataFile: null as File | null,
-    additionalFiles: [] as File[]
-  })
+    additionalFiles: [] as File[],
+  }
+}
+
+export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: EnhancedAddCandidateModalProps) {
+  const [activeTab, setActiveTab] = useState('personal')
+  const [formData, setFormData] = useState(createInitialFormData)
 
   const [newSkill, setNewSkill] = useState('')
-  const [activeJobPostings, setActiveJobPostings] = useState<any[]>([])
+  const [activeJobPostings, setActiveJobPostings] = useState<PositionOption[]>([])
+  const [positionPickerMeta, setPositionPickerMeta] = useState<PositionPickerMeta | null>(null)
   const [divisions, setDivisions] = useState<any[]>([])
   const [loadingDivisions, setLoadingDivisions] = useState(false)
   const [loadingPositions, setLoadingPositions] = useState(false)
@@ -65,14 +67,25 @@ export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: E
   const cvInputRef = useRef<HTMLInputElement>(null)
   const additionalFilesInputRef = useRef<HTMLInputElement>(null)
 
+  const resetForm = () => {
+    setFormData(createInitialFormData())
+    setNewSkill('')
+    setActiveTab('personal')
+    setFileErrors({})
+    if (cvInputRef.current) cvInputRef.current.value = ''
+    if (additionalFilesInputRef.current) additionalFilesInputRef.current.value = ''
+  }
+
   console.log('[EnhancedAddCandidateModal] Active job postings state:', activeJobPostings)
   console.log('[EnhancedAddCandidateModal] Divisions state:', divisions)
 
-  // Load active job postings and divisions from API - reload when modal opens
+  // Reset form and load master data each time the modal opens
   useEffect(() => {
     if (!isOpen) {
       return
     }
+
+    resetForm()
 
     // Load divisions from Master Division API
     const loadDivisions = async () => {
@@ -96,37 +109,20 @@ export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: E
       }
     }
     
-    // Load active job postings from API (exclude currentStatus "On Boarding")
     const loadJobPostings = async () => {
       setLoadingPositions(true)
       try {
-        const response = await FPTKAPI.getAll({}, { page: 1, limit: 100 })
-        console.log('[EnhancedAddCandidateModal] FPTKAPI.getAll response:', response)
-        const fptkData = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : [])
-        console.log('[EnhancedAddCandidateModal] Parsed FPTK data length:', fptkData.length)
-
-        const active = fptkData
-          .filter((fptk: any) => {
-            const status = (fptk?.currentStatus || fptk?.status || '').toUpperCase()
-            console.log('[EnhancedAddCandidateModal] Checking FPTK status:', status, 'for position', fptk.position || fptk.positionTitle || fptk.title || fptk.id)
-            return status !== 'ON BOARDING'
-          })
-          .map((fptk: any) => {
-            const rawTitle = fptk.position || fptk.positionTitle || fptk.title || fptk.department
-            const title = rawTitle && rawTitle.trim().length > 0 ? rawTitle : `Position ${String(fptk.id || '').slice(0, 8)}`
-            return {
-              id: fptk.id,
-              title,
-              department: fptk.department || '',
-              currentStatus: fptk.currentStatus || fptk.status || '',
-            }
-          })
-
-        console.log('[EnhancedAddCandidateModal] Active job postings count:', active.length)
-        setActiveJobPostings(active)
+        const result = await loadSelectablePositionOptions()
+        setActiveJobPostings(result.options)
+        setPositionPickerMeta({
+          totalFetched: result.totalFetched,
+          selectableCount: result.selectableCount,
+          excludedByStatusCount: result.excludedByStatusCount,
+        })
       } catch (error) {
         console.error('[EnhancedAddCandidateModal] Error loading job postings:', error)
         setActiveJobPostings([])
+        setPositionPickerMeta(null)
       } finally {
         setLoadingPositions(false)
       }
@@ -172,15 +168,6 @@ export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: E
       division: prev.division.includes(divisionName)
         ? prev.division.filter(d => d !== divisionName)
         : [...prev.division, divisionName]
-    }))
-  }
-
-  const handleTogglePosition = (position: string) => {
-    setFormData(prev => ({
-      ...prev,
-      positionAppliedFor: prev.positionAppliedFor.includes(position)
-        ? prev.positionAppliedFor.filter(p => p !== position)
-        : [...prev.positionAppliedFor, position]
     }))
   }
 
@@ -467,83 +454,15 @@ export default function EnhancedAddCandidateModal({ isOpen, onClose, onSave }: E
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                      Position Applied For
-                    </label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', minHeight: '60px', padding: '8px', border: '1px solid #D1D5DB', borderRadius: '6px', backgroundColor: '#fff' }}>
-                      {formData.positionAppliedFor.length === 0 ? (
-                        <span style={{ fontSize: '14px', color: '#9CA3AF', fontStyle: 'italic' }}>No positions selected</span>
-                      ) : (
-                        formData.positionAppliedFor.map((position) => (
-                          <span
-                            key={position}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              padding: '4px 12px',
-                              backgroundColor: '#EEF2FF',
-                              color: '#4F46E5',
-                              borderRadius: '16px',
-                              fontSize: '14px',
-                              fontWeight: '500'
-                            }}
-                          >
-                            {position}
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePosition(position)}
-                              style={{
-                                marginLeft: '8px',
-                                background: 'none',
-                                border: 'none',
-                                color: '#4F46E5',
-                                cursor: 'pointer',
-                                fontSize: '16px',
-                                lineHeight: 1
-                              }}
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    </div>
-                    <div style={{ marginTop: '8px' }}>
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleTogglePosition(e.target.value)
-                            e.target.value = ''
-                          }
-                        }}
-                        disabled={loadingPositions}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          border: '1px solid #D1D5DB',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          outline: 'none',
-                          opacity: loadingPositions ? 0.6 : 1,
-                          cursor: loadingPositions ? 'wait' : 'pointer'
-                        }}
-                      >
-                        <option value="">{loadingPositions ? 'Loading positions...' : 'Add Position'}</option>
-                        {!loadingPositions && activeJobPostings && activeJobPostings.length > 0 ? (
-                          activeJobPostings
-                            .filter(job => job && job.title && !formData.positionAppliedFor.includes(job.title))
-                            .map((jobPosting) => (
-                              <option key={jobPosting.id || jobPosting.title} value={jobPosting.title}>
-                                {jobPosting.title}
-                              </option>
-                            ))
-                        ) : !loadingPositions ? (
-                          <option value="" disabled>No open positions available</option>
-                        ) : null}
-                      </select>
-                    </div>
-                  </div>
+                  <PositionAppliedForField
+                    selected={formData.positionAppliedFor}
+                    options={activeJobPostings}
+                    loading={loadingPositions}
+                    meta={positionPickerMeta}
+                    onChange={(positionAppliedFor) =>
+                      setFormData((prev) => ({ ...prev, positionAppliedFor }))
+                    }
+                  />
                   <div>
                     <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '4px' }}>
                       Place of Birth

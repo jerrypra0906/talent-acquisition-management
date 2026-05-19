@@ -2231,7 +2231,7 @@ export default function EditJobPostingModal({
                               Withdraw Date: {formatDate(candidate.withdrawDate)}
                             </div>
                           ) : null}
-                          {candidate.status === 'MCU' ? (
+                          {['MCU', 'On Boarding'].includes(candidate.status) ? (
                             <div style={{ marginTop: '10px' }}>
                               <label
                                 style={{

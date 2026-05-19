@@ -42,6 +42,7 @@ exports.login = asyncHandler(async (req, res) => {
     message: 'Login successful',
     data: {
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       user: result.user,
     },
   });
@@ -76,6 +77,7 @@ exports.refresh = asyncHandler(async (req, res) => {
     message: 'Token refreshed',
     data: {
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
     },
   });
 });

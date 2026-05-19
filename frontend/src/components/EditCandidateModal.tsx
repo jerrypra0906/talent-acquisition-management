@@ -4,7 +4,9 @@ import { useState, useRef, useEffect } from 'react'
 import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon, CloudArrowUpIcon, DocumentArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline'
 import { Candidate } from '@/types'
-import { MasterDivisionAPI, FPTKAPI } from '@/lib/api'
+import { MasterDivisionAPI } from '@/lib/api'
+import { loadSelectablePositionOptions, type PositionOption } from '@/lib/fptkPositionOptions'
+import PositionAppliedForField, { type PositionPickerMeta } from '@/components/PositionAppliedForField'
 import { compressFile, formatFileSize } from '@/utils/fileCompression'
 
 interface FileSelection {
@@ -62,7 +64,9 @@ export default function EditCandidateModal({ isOpen, onClose, onSave, candidate 
   const [existingAdditionalFiles, setExistingAdditionalFiles] = useState<any[]>([])
 
   const [newSkill, setNewSkill] = useState('')
-  const [activeJobPostings, setActiveJobPostings] = useState<any[]>([])
+  const [activeJobPostings, setActiveJobPostings] = useState<PositionOption[]>([])
+  const [positionPickerMeta, setPositionPickerMeta] = useState<PositionPickerMeta | null>(null)
+  const [loadingPositions, setLoadingPositions] = useState(false)
   const [divisions, setDivisions] = useState<any[]>([])
 
   const cvInputRef = useRef<HTMLInputElement>(null)
@@ -84,39 +88,22 @@ export default function EditCandidateModal({ isOpen, onClose, onSave, candidate 
     
     console.log('Modal is open, loading divisions and job postings...')
     
-    // Load active job postings from FPTK API
     const loadJobPostings = async () => {
+      setLoadingPositions(true)
       try {
-        const response = await FPTKAPI.getAll({}, { page: 1, limit: 100 })
-        console.log('[EditCandidateModal] FPTKAPI.getAll response:', response)
-        const fptkData = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : [])
-        console.log('[EditCandidateModal] Parsed FPTK data length:', fptkData.length)
-        
-        // Filter: exclude "On Boarding" and inactive statuses
-        const jobPostings = fptkData
-          .filter((fptk: any) => {
-            const status = (fptk.currentStatus || fptk.status || '').toUpperCase()
-            console.log('[EditCandidateModal] Checking FPTK status:', status, 'for position', fptk.position || fptk.positionTitle || fptk.title || fptk.id)
-            if (!status) return true
-            if (status === 'ON BOARDING') return false
-            return !['FILLED', 'CANCELLED', 'EXPIRED'].includes(status)
-          })
-          .map((fptk: any) => {
-            const rawTitle = fptk.position || fptk.positionTitle || fptk.title || fptk.department
-            const title = rawTitle && rawTitle.trim().length > 0 ? rawTitle : `Position ${String(fptk.id || '').slice(0, 8)}`
-            return {
-              id: fptk.id,
-              title,
-              department: fptk.department || '',
-              status: fptk.currentStatus || fptk.status,
-            }
-          })
-        
-        console.log('[EditCandidateModal] Active job postings count:', jobPostings.length)
-        setActiveJobPostings(jobPostings)
+        const result = await loadSelectablePositionOptions()
+        setActiveJobPostings(result.options)
+        setPositionPickerMeta({
+          totalFetched: result.totalFetched,
+          selectableCount: result.selectableCount,
+          excludedByStatusCount: result.excludedByStatusCount,
+        })
       } catch (error) {
         console.error('Error loading job postings:', error)
         setActiveJobPostings([])
+        setPositionPickerMeta(null)
+      } finally {
+        setLoadingPositions(false)
       }
     }
     
@@ -254,15 +241,6 @@ export default function EditCandidateModal({ isOpen, onClose, onSave, candidate 
       division: prev.division.includes(divisionName)
         ? prev.division.filter(d => d !== divisionName)
         : [...prev.division, divisionName]
-    }))
-  }
-
-  const handleTogglePosition = (position: string) => {
-    setFormData(prev => ({
-      ...prev,
-      positionAppliedFor: prev.positionAppliedFor.includes(position)
-        ? prev.positionAppliedFor.filter(p => p !== position)
-        : [...prev.positionAppliedFor, position]
     }))
   }
 
@@ -586,80 +564,15 @@ export default function EditCandidateModal({ isOpen, onClose, onSave, candidate 
                         </select>
                       </div>
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-                        Position Applied For
-                      </label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', minHeight: '60px', padding: '8px', border: '1px solid #D1D5DB', borderRadius: '6px', backgroundColor: '#fff' }}>
-                        {formData.positionAppliedFor.length === 0 ? (
-                          <span style={{ fontSize: '14px', color: '#9CA3AF', fontStyle: 'italic' }}>No positions selected</span>
-                        ) : (
-                          formData.positionAppliedFor.map((position) => (
-                            <span
-                              key={position}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                padding: '4px 12px',
-                                backgroundColor: '#EEF2FF',
-                                color: '#4F46E5',
-                                borderRadius: '16px',
-                                fontSize: '14px',
-                                fontWeight: '500'
-                              }}
-                            >
-                              {position}
-                              <button
-                                type="button"
-                                onClick={() => handleTogglePosition(position)}
-                                style={{
-                                  marginLeft: '8px',
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#4F46E5',
-                                  cursor: 'pointer',
-                                  fontSize: '16px',
-                                  lineHeight: 1
-                                }}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))
-                        )}
-                      </div>
-                      <div style={{ marginTop: '8px' }}>
-                        <select
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              handleTogglePosition(e.target.value)
-                              e.target.value = ''
-                            }
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            border: '1px solid #D1D5DB',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            outline: 'none'
-                          }}
-                        >
-                        <option value="">Add Position</option>
-                        {activeJobPostings && activeJobPostings.length > 0 ? (
-                          activeJobPostings
-                            .filter(job => job && job.title && !formData.positionAppliedFor.includes(job.title))
-                            .map((jobPosting) => (
-                              <option key={jobPosting.id || jobPosting.title} value={jobPosting.title}>
-                                {jobPosting.title}
-                              </option>
-                            ))
-                        ) : (
-                          <option value="" disabled>No open positions available</option>
-                        )}
-                        </select>
-                      </div>
-                    </div>
+                    <PositionAppliedForField
+                      selected={formData.positionAppliedFor}
+                      options={activeJobPostings}
+                      loading={loadingPositions}
+                      meta={positionPickerMeta}
+                      onChange={(positionAppliedFor) =>
+                        setFormData((prev) => ({ ...prev, positionAppliedFor }))
+                      }
+                    />
                     <div>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '4px' }}>
                         Place of Birth
