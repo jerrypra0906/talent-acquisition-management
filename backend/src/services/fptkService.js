@@ -251,7 +251,6 @@ const ALLOWED_CURRENT_STATUS = new Set([
   'open',
   'pending fktk',
   're-open',
-  'hold',
   'cancel',
   'internal movement',
   'close',
