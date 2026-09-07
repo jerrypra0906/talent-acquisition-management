@@ -201,6 +201,92 @@ export const ALL_APPLICATION_UI_STATUSES: string[] = [
   'Keep In View',
 ]
 
+export const TERMINAL_PIPELINE_UI_STATUSES = new Set([
+  REJECTED_UI_STATUS,
+  'Offer Rejected',
+  'Withdrawn',
+])
+
+/**
+ * Happy-path stepper rank for "latest stage on a position".
+ * Same order as ALL_APPLICATION_UI_STATUSES, minus terminals and Keep In View.
+ * Hired is appended because HIRED already maps to that UI label.
+ */
+export const PIPELINE_STATUS_RANK: readonly string[] = [
+  ...ALL_APPLICATION_UI_STATUSES.filter(
+    (status) => !TERMINAL_PIPELINE_UI_STATUSES.has(status) && status !== 'Keep In View'
+  ),
+  'Hired',
+]
+
+/** Labels that exist in mapApplicationStatusToUi but are not named stepper steps. */
+const PIPELINE_RANK_ALIASES: Record<string, string> = {
+  'Medical Checkup Scheduled': 'MCU',
+  'Contract Sent': 'On Boarding',
+  'Contract Signed': 'On Boarding',
+}
+
+export type LatestPipelineProgress = {
+  status: string
+  count: number
+}
+
+function toPipelineUiLabel(status?: string | null, backendStatus?: string | null): string {
+  const raw = (backendStatus || status || '').toString().trim()
+  if (!raw) return ''
+  return mapApplicationStatusToUi(mapUiStatusToApplicationStatus(raw))
+}
+
+export function getPipelineRank(uiStatus: string): number {
+  const canonical = PIPELINE_RANK_ALIASES[uiStatus] || uiStatus
+  return PIPELINE_STATUS_RANK.indexOf(canonical)
+}
+
+/**
+ * Furthest non-terminal candidate on a position.
+ * Keep In View is a side path: it never beats a main-path candidate, and is
+ * only returned when nobody is on the happy path.
+ */
+export function getLatestPipelineProgress(
+  candidates?: Array<{ status?: string | null; backendStatus?: string | null }> | null
+): LatestPipelineProgress | null {
+  if (!candidates || candidates.length === 0) return null
+
+  let bestRank = -1
+  const countsAtBest = new Map<string, number>()
+  let kivCount = 0
+
+  for (const candidate of candidates) {
+    const ui = toPipelineUiLabel(candidate.status, candidate.backendStatus)
+    if (!ui) continue
+    if (ui === 'Keep In View') {
+      kivCount += 1
+      continue
+    }
+    if (TERMINAL_PIPELINE_UI_STATUSES.has(ui)) continue
+
+    const rank = getPipelineRank(ui)
+    if (rank < 0) continue
+    if (rank > bestRank) {
+      bestRank = rank
+      countsAtBest.clear()
+      countsAtBest.set(ui, 1)
+    } else if (rank === bestRank) {
+      countsAtBest.set(ui, (countsAtBest.get(ui) || 0) + 1)
+    }
+  }
+
+  if (bestRank < 0) {
+    return kivCount > 0 ? { status: 'Keep In View', count: kivCount } : null
+  }
+
+  const count = Array.from(countsAtBest.values()).reduce((sum, n) => sum + n, 0)
+  if (countsAtBest.size === 1) {
+    return { status: countsAtBest.keys().next().value as string, count }
+  }
+  return { status: PIPELINE_STATUS_RANK[bestRank], count }
+}
+
 /**
  * Returns the statuses selectable from `currentUiStatus` (always includes the current
  * status itself so a <select> never renders with an out-of-list value). Returns `null` when
