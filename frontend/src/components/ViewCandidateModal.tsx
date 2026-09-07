@@ -1170,7 +1170,13 @@ export default function ViewCandidateModal({ isOpen, onClose, candidate }: ViewC
                                 borderRadius: '8px',
                                 border: '1px solid #e5e7eb'
                               }}>
-                                <div><strong>Period:</strong> {work.startMonth}/{work.startYear} - {work.endMonth || 'Present'}/{work.endYear || ''}</div>
+                                <div>
+                                  <strong>Period:</strong>{' '}
+                                  {work.startMonth}/{work.startYear} -{' '}
+                                  {work.currentlyWorking || (!work.endMonth && !work.endYear)
+                                    ? 'Present'
+                                    : `${work.endMonth}/${work.endYear}`}
+                                </div>
                                 <div><strong>Company:</strong> {work.companyName || '-'}</div>
                                 <div><strong>Address:</strong> {work.companyAddress || '-'}</div>
                                 <div><strong>Starting Position:</strong> {work.startingPosition || '-'}</div>
@@ -1265,8 +1271,12 @@ export default function ViewCandidateModal({ isOpen, onClose, candidate }: ViewC
                             <div style={{ fontSize: '14px', color: '#111827' }}>{formData.currentBenefits || '-'}</div>
                           </div>
                           <div style={{ gridColumn: '1 / -1' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280' }}>Expected Salary & Benefits</span>
+                            <span style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280' }}>Expected Salary</span>
                             <div style={{ fontSize: '14px', color: '#111827' }}>{formData.expectedSalary || '-'}</div>
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280' }}>Expected Benefits</span>
+                            <div style={{ fontSize: '14px', color: '#111827' }}>{formData.expectedBenefits || '-'}</div>
                           </div>
                           <div>
                             <span style={{ fontSize: '12px', fontWeight: '500', color: '#6B7280' }}>Available Start Date</span>

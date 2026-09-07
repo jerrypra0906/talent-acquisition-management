@@ -484,6 +484,41 @@ router.put(
       const tokenRecord = await candidateFormTokenService.validateCandidateFormToken(token);
       const formData = req.body.formData || {};
 
+      const expectedSalaryText = formData.expectedSalary != null ? String(formData.expectedSalary).trim() : '';
+      const expectedBenefitsText = formData.expectedBenefits != null ? String(formData.expectedBenefits).trim() : '';
+
+      const workExperience = Array.isArray(formData.workExperience) ? formData.workExperience : [];
+      const filledWorkExperience = workExperience.filter((work) => {
+        if (!work || typeof work !== 'object') return false;
+        const hasCoreFields = Boolean(
+          String(work.startMonth || '').trim() &&
+            String(work.startYear || '').trim() &&
+            String(work.companyName || '').trim() &&
+            String(work.companyAddress || '').trim() &&
+            String(work.startingPosition || '').trim() &&
+            String(work.lastPosition || '').trim()
+        );
+        if (!hasCoreFields) return false;
+        if (work.currentlyWorking) return true;
+        return Boolean(String(work.endMonth || '').trim() && String(work.endYear || '').trim());
+      });
+
+      if (filledWorkExperience.length < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one work experience is required',
+        });
+      }
+
+      if (!expectedSalaryText || !expectedBenefitsText) {
+        return res.status(400).json({
+          success: false,
+          message: 'Expected salary and expected benefits are required',
+        });
+      }
+
+      const parsedExpectedSalary = Number.parseFloat(expectedSalaryText);
+
     const updateData = {
       placeOfBirth: formData.placeOfBirth,
       dateOfBirth: formData.dateOfBirth ? new Date(formData.dateOfBirth) : null,
@@ -498,7 +533,7 @@ router.put(
       emergencyContact: formData.emergencyContactName,
       emergencyPhone: formData.emergencyPhoneNo,
       emergencyRelation: formData.emergencyRelation,
-      expectedSalary: formData.expectedSalary ? parseFloat(formData.expectedSalary) : null,
+      expectedSalary: Number.isFinite(parsedExpectedSalary) ? parsedExpectedSalary : null,
       availableFrom: formData.availableStartDate ? new Date(formData.availableStartDate) : null,
         drivingLicense: Array.isArray(formData.drivingLicense)
           ? formData.drivingLicense

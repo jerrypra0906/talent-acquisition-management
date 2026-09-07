@@ -15,6 +15,11 @@ import {
 } from '@/utils/fptkPositionStatus'
 import { getPositionSlaWorkingDays } from '@/utils/positionSla'
 import {
+  getApplicationStatusPillClass,
+  getLatestPipelineProgress,
+  type LatestPipelineProgress,
+} from '@/utils/applicationStatusUi'
+import {
   ExclamationCircleIcon,
   AdjustmentsHorizontalIcon,
   InformationCircleIcon,
@@ -47,6 +52,7 @@ interface SummaryRow {
   hiringManager: string
   counts: StatusCounts
   onboardingCandidates: OnboardingCandidate[]
+  latestPipeline: LatestPipelineProgress | null
 }
 
 function hiringManagerMatches(rowHm: string, selected: string[]): boolean {
@@ -209,21 +215,33 @@ function SlaHeroBadge({ sla, slaDays }: { sla: string; slaDays: number | null })
   )
 }
 
-/** Combines Current Status + Status FKTK + Remark into one compact cell. */
+/** Combines Current Status + latest stepper + Status FKTK + Remark into one compact cell. */
 function StatusCell({
   currentStatus,
   statusFktk,
   remark,
+  latestPipeline,
 }: {
   currentStatus: string
   statusFktk: string
   remark: string
+  latestPipeline: LatestPipelineProgress | null
 }) {
   const hasRemark = Boolean(remark) && remark !== '-'
   const isReceived = statusFktk.trim().toLowerCase() === 'received'
   return (
-    <div className="flex items-center gap-1.5 min-w-0">
+    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
       <span className="truncate text-sm text-gray-900">{displayFptkCurrentStatus(currentStatus)}</span>
+      {latestPipeline && (
+        <span
+          className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+          style={getApplicationStatusPillClass(latestPipeline.status)}
+          title="Furthest active candidate in the hiring stepper"
+        >
+          {latestPipeline.status}
+          {latestPipeline.count > 1 ? ` · ${latestPipeline.count}` : ''}
+        </span>
+      )}
       {statusFktk && statusFktk !== '-' && (
         <span
           className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
@@ -450,6 +468,7 @@ function SummaryByPositionContent() {
       const payload = await FPTKAPI.getSummaryByPosition()
       const allJobPostings: any[] = payload?.fptks || []
       const applicationCounts: Record<string, Record<string, number>> = payload?.applicationCounts || {}
+      const currentStatusesByFptkId: Record<string, string[]> = payload?.currentStatusesByFptkId || {}
       // Total applicants per FPTK regardless of current status — keeps the
       // "Applied" column cumulative (never shrinks as candidates advance).
       const totalApplicants: Record<string, number> = payload?.totalApplicants || {}
@@ -507,6 +526,9 @@ function SummaryByPositionContent() {
           hiringManager: (job.hiringManager || '').trim() || '—',
           counts,
           onboardingCandidates: onboardingCandidatesMap[job.id] ?? [],
+          latestPipeline: getLatestPipelineProgress(
+            (currentStatusesByFptkId[job.id] || []).map((status) => ({ backendStatus: status }))
+          ),
         }
       })
 
@@ -1043,11 +1065,12 @@ function SummaryByPositionContent() {
                     <td className="px-3 py-1 whitespace-nowrap">
                       <SlaHeroBadge sla={row.sla} slaDays={row.slaDays} />
                     </td>
-                    <td className="px-3 py-1 max-w-[14rem]">
+                    <td className="px-3 py-1 max-w-[18rem]">
                       <StatusCell
                         currentStatus={row.currentStatus}
                         statusFktk={row.statusFktk}
                         remark={row.remark}
+                        latestPipeline={row.latestPipeline}
                       />
                     </td>
                     {visibleStatuses.map((status) => {

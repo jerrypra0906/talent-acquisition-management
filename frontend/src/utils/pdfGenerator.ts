@@ -209,7 +209,7 @@ export function generateFormDataDiriPDF(formData: any, candidateName: string, su
       doc.setFontSize(9)
       doc.setFont('helvetica', 'normal')
       const workDetails = [
-        ['Period', `${work.startMonth || ''}/${work.startYear || ''} - ${work.endMonth || 'Present'}/${work.endYear || ''}`],
+        ['Period', `${work.startMonth || ''}/${work.startYear || ''} - ${work.currentlyWorking || (!work.endMonth && !work.endYear) ? 'Present' : `${work.endMonth}/${work.endYear}`}`],
         ['Company Address', work.companyAddress || '-'],
         ['Starting Position', work.startingPosition || '-'],
         ['Last Position', work.lastPosition || '-'],
@@ -309,12 +309,23 @@ export function generateFormDataDiriPDF(formData: any, candidateName: string, su
   if (formData.expectedSalary) {
     checkNewPage(10)
     doc.setFont('helvetica', 'bold')
-    doc.text('Expected Salary & Benefits:', margin, yPosition)
+    doc.text('Expected Salary:', margin, yPosition)
     yPosition += 6
     doc.setFont('helvetica', 'normal')
     const salary = doc.splitTextToSize(formData.expectedSalary, contentWidth)
     doc.text(salary, margin, yPosition)
     yPosition += salary.length * 4 + 5
+  }
+
+  if (formData.expectedBenefits) {
+    checkNewPage(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Expected Benefits:', margin, yPosition)
+    yPosition += 6
+    doc.setFont('helvetica', 'normal')
+    const benefits = doc.splitTextToSize(formData.expectedBenefits, contentWidth)
+    doc.text(benefits, margin, yPosition)
+    yPosition += benefits.length * 4 + 5
   }
 
   // Declaration
