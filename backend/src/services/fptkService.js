@@ -1409,9 +1409,13 @@ async function getSummaryByPosition(user = null) {
   });
 
   const countsByFptkId = {};
+  const currentStatusesByFptkId = {};
   const allStatuses = new Set();
   applications.forEach((app) => {
     if (!app.fptkId) return;
+
+    if (!currentStatusesByFptkId[app.fptkId]) currentStatusesByFptkId[app.fptkId] = [];
+    currentStatusesByFptkId[app.fptkId].push(app.status);
 
     const rawStatusesReached = rawStatusesByApplicationId.get(app.id) || new Set();
     rawStatusesReached.add(app.status);
@@ -1455,6 +1459,7 @@ async function getSummaryByPosition(user = null) {
   return {
     fptks: fptksWithSla,
     applicationCounts: countsByFptkId,
+    currentStatusesByFptkId,
     totalApplicants: totalApplicantsByFptkId,
     onboardingCandidates: onboardingByFptkId,
     statuses: Array.from(allStatuses),
