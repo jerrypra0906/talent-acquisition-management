@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useModalEscape } from '@/hooks/useModalEscape'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { FPTK } from '@/types'
-import { MasterOfficeLocationAPI, MasterDivisionAPI, CandidatesAPI, ApplicationsAPI } from '@/lib/api'
+import { MasterOfficeLocationAPI, MasterDivisionAPI, CandidatesAPI, ApplicationsAPI, FPTKAPI } from '@/lib/api'
+import { buildAppliedCandidatesOnlyPayload } from '@/utils/fptkUpdatePayload'
 import { loadHiringManagerOptions } from '@/lib/hiringManagerOptions'
 import { loadInterviewerOptions } from '@/lib/interviewerOptions'
 import ApplicationHistoryModal from './ApplicationHistoryModal'
@@ -93,6 +94,7 @@ export default function EditJobPostingModal({
   const [newSkill, setNewSkill] = useState('')
   const [appliedCandidates, setAppliedCandidates] = useState<any[]>([])
   const [expandedInterviewSections, setExpandedInterviewSections] = useState<Set<string>>(new Set())
+  const autoExpandedInterviewKeysRef = useRef<Set<string>>(new Set())
   const [historyApplicationId, setHistoryApplicationId] = useState<string | null>(null)
   const [pendingStatusChange, setPendingStatusChange] = useState<{ candidateId: string; newStatus: string } | null>(null)
   const [statusChangeReason, setStatusChangeReason] = useState('')
@@ -184,6 +186,46 @@ export default function EditJobPostingModal({
       interviews: candidate.interviews || baseInfo.interviews || [],
     }
   }
+
+  useEffect(() => {
+    setAppliedCandidates((prev) => {
+      let changed = false
+      const next = prev.map((candidate) => {
+        const status = String(candidate.status || '')
+        if (status !== 'Interview Scheduled' && status !== 'Interviewed') return candidate
+        if (Array.isArray(candidate.interviews) && candidate.interviews.length > 0) return candidate
+        changed = true
+        return { ...candidate, interviews: [{ interviewer: '', date: '', time: '', results: '' }] }
+      })
+      return changed ? next : prev
+    })
+
+    setExpandedInterviewSections((prev) => {
+      const next = new Set(prev)
+      let changed = false
+      for (const candidate of appliedCandidates) {
+        const status = String(candidate.status || '')
+        const hasFilledInterviews = (candidate.interviews || []).some(
+          (iv: any) => iv && (iv.interviewer || iv.date || iv.time || iv.results)
+        )
+        if (
+          status !== 'Interview Scheduled' &&
+          status !== 'Interviewed' &&
+          !hasFilledInterviews
+        ) {
+          continue
+        }
+        const key = String(candidate.id || candidate.candidateId || '')
+        if (!key || autoExpandedInterviewKeysRef.current.has(key)) continue
+        autoExpandedInterviewKeysRef.current.add(key)
+        if (!next.has(key)) {
+          next.add(key)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [appliedCandidates])
 
   // Load office locations from Master Office Location
   useEffect(() => {
@@ -881,8 +923,17 @@ export default function EditJobPostingModal({
       c => c.id === candidateId || c.candidateId === candidateId
     )
     const oldStatus = target ? target.status : undefined
+    const interviewResultRequired = isInterviewResultRequired(oldStatus, newStatus)
+    const hasInterviewInput = (target?.interviews || []).some(
+      (iv: any) =>
+        iv &&
+        ((iv.interviewer || '').toString().trim() ||
+          (iv.date || '').toString().trim() ||
+          (iv.time || '').toString().trim() ||
+          (iv.results || '').toString().trim())
+    )
 
-    if (isInterviewResultRequired(oldStatus, newStatus)) {
+    if (interviewResultRequired) {
       const hasInterviewResult = (target?.interviews || []).some(
         (iv: any) => (iv?.results || '').toString().trim().length > 0
       )
@@ -900,6 +951,15 @@ export default function EditJobPostingModal({
       }
       try {
         setStatusSaving(true)
+        // Status-only roles save immediately via updateStatus, which does not send
+        // interview notes. Persist interviews first so Assessment / Document
+        // Verification is not blocked by an empty Interview Result on the server.
+        if (jobPosting?.id && (interviewResultRequired || hasInterviewInput)) {
+          await FPTKAPI.updateAppliedCandidates(
+            jobPosting.id,
+            buildAppliedCandidatesOnlyPayload(appliedCandidates)
+          )
+        }
         await ApplicationsAPI.updateStatus(applicationId, {
           status: mapUiStatusToApplicationStatus(newStatus),
           reason: reason || undefined,
@@ -1410,7 +1470,7 @@ export default function EditJobPostingModal({
             </h2>
             {candidateStatusOnly && (
               <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
-                Update candidate status, join date, or add candidates to this position. New additions and join date changes are saved when you click Save Candidates. Position details are read-only.
+                Update candidate status, interview results, join date, or add candidates to this position. New additions and join date changes are saved when you click Save Candidates. Position details are read-only.
               </p>
             )}
           </div>
@@ -2383,7 +2443,7 @@ export default function EditJobPostingModal({
                         </div>
                       )}
                       
-                      {/* Interview Details Section - Show when status is Interview Scheduled, Interviewed, or any subsequent status with interviews filled */}
+                      {/* Interview Details: always for Interview Scheduled / Interviewed; any other status if details already exist. */}
                       {(() => {
                         const status = candidate.status || ''
                         const hasInterviews = (candidate.interviews || []).length > 0
@@ -2391,31 +2451,9 @@ export default function EditJobPostingModal({
                           iv.interviewer || iv.date || iv.time || iv.results
                         )
                         
-                        // Statuses that should show interview section
-                        const interviewStatuses = ['Interview Scheduled', 'Interviewed']
-                        // Statuses that come after "Interviewed" - if interviews are filled, show them
-                        const postInterviewStatuses = [
-                          'Document Verification',
-                          'Assessment',
-                          'Pending Feedback',
-                          'Offering Creation',
-                          'Offer Sent',
-                          'Offer Accepted',
-                          'Offer Rejected',
-                          'MCU',
-                          'Medical Checkup Scheduled',
-                          'Medical Checkup Completed',
-                          'Contract Sent',
-                          'Contract Signed',
-                          'On Boarding',
-                          'Hired'
-                        ]
-                        
-                        const shouldShowInterviewSection = 
-                          !candidateStatusOnly && (
-                          interviewStatuses.includes(status) || 
-                          (postInterviewStatuses.includes(status) && hasFilledInterviews)
-                          )
+                        const interviewEntryStatuses = ['Interview Scheduled', 'Interviewed']
+                        const shouldShowInterviewSection =
+                          interviewEntryStatuses.includes(status) || hasFilledInterviews
                         
                         const candidateKey = candidate.id || candidate.candidateId || ''
                         const isExpanded = expandedInterviewSections.has(candidateKey)
@@ -2424,7 +2462,7 @@ export default function EditJobPostingModal({
                         <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? '8px' : '0' }}>
                             <div style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>
-                              Interview Details {status === 'Interviewed' || postInterviewStatuses.includes(status) ? '(Interview Results)' : ''}
+                              Interview Details {status === 'Interviewed' || hasFilledInterviews ? '(Interview Results)' : ''}
                             </div>
                             <button
                               type="button"

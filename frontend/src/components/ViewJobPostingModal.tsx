@@ -7,7 +7,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline'
 import { FPTK, Candidate } from '@/types'
 import ViewCandidateModal from './ViewCandidateModal'
 import ApplicationHistoryModal from './ApplicationHistoryModal'
-import { CandidatesAPI } from '@/lib/api'
+import { CandidatesAPI, getPublicFileBaseUrl } from '@/lib/api'
 import { fetchApplicationsForFptk } from '@/utils/mapFptkApplication'
 import { mapApiCandidate } from '@/app/candidates/page'
 import { mapApplicationStatusToUi } from '@/utils/applicationStatusUi'
@@ -15,16 +15,6 @@ import {
   resolveCandidatePermissions,
   resolveRoleNameFromUser,
 } from '@/utils/candidatePermissions'
-
-// Helper to get API base URL without /api
-const getApiBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname
-    const protocol = window.location.protocol
-    return `${protocol}//${hostname}:4000`
-  }
-  return 'http://localhost:4000'
-}
 
 interface ViewJobPostingModalProps {
   isOpen: boolean
@@ -177,7 +167,7 @@ export default function ViewJobPostingModal({ isOpen, onClose, jobPosting, onSta
                     <div style={{ marginTop: '4px' }}>
                       {(jobPosting as any).fptkFilePath ? (
                         <a
-                          href={`${getApiBaseUrl()}${(jobPosting as any).fptkFilePath}`}
+                          href={`${getPublicFileBaseUrl()}${(jobPosting as any).fptkFilePath}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
