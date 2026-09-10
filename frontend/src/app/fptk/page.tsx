@@ -27,7 +27,12 @@ import {
 } from '@/utils/fptkExcelParser'
 import { FPTKAPI, MasterOfficeLocationAPI, MenuAccessAPI } from '@/lib/api'
 import MultiSelectDropdown from '@/components/MultiSelectDropdown'
-import { mapUiStatusToApplicationStatus } from '@/utils/applicationStatusUi'
+import {
+  getApplicationStatusPillClass,
+  getLatestPipelineProgress,
+  mapUiStatusToApplicationStatus,
+} from '@/utils/applicationStatusUi'
+import { mapInterviewToUiFields } from '@/utils/mapFptkApplication'
 import { resolveFptkEditPermissions, resolveRoleNameFromUser } from '@/utils/fptkEditPermissions'
 
 const DEFAULT_CURRENT_STATUS = 'Pending FKTK'
@@ -170,28 +175,8 @@ export const mapApiFptk = (fptk: any): FPTK => {
             ? languagesData.yearsOfExperience
             : 0
 
-        // Map interviews from backend format to frontend format
         const interviews = Array.isArray(application.interviews)
-          ? application.interviews.map((interview: any) => {
-              // Get interviewer name: prefer from relation, fallback to stored name
-              let interviewerName = ''
-              if (interview.interviewer) {
-                interviewerName = `${interview.interviewer.firstName || ''} ${interview.interviewer.lastName || ''}`.trim() || interview.interviewer.email || ''
-              } else if (interview.interviewerName) {
-                interviewerName = interview.interviewerName
-              }
-              
-              return {
-                interviewer: interviewerName,
-                date: interview.scheduledAt
-                  ? new Date(interview.scheduledAt).toISOString().split('T')[0]
-                  : '',
-                time: interview.scheduledAt
-                  ? new Date(interview.scheduledAt).toTimeString().split(' ')[0].slice(0, 5)
-                  : '',
-                results: interview.notes || '',
-              }
-            })
+          ? application.interviews.map(mapInterviewToUiFields)
           : []
 
         return {
@@ -1457,8 +1442,10 @@ function FPTKPageContent() {
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">
-              {filteredFptks.map((fptk) => (
-                <li key={fptk.id}>
+              {filteredFptks.map((fptk) => {
+                const pipeline = getLatestPipelineProgress(fptk.appliedCandidates)
+                return (
+                  <li key={fptk.id}>
                   <div className="px-4 py-4 flex items-center justify-between hover:bg-gray-50">
                     <div className="flex items-center min-w-0 flex-1">
                       {canDelete && (
@@ -1476,14 +1463,24 @@ function FPTKPageContent() {
                           <BriefcaseIcon className="h-6 w-6 text-indigo-600" />
                         </div>
                       </div>
-                      <div className="ml-4">
-                        <div className="flex items-center">
+                      <div className="ml-4 min-w-0">
+                        <div className="flex items-center flex-wrap gap-y-1">
                           <p className="text-sm font-medium text-indigo-600 truncate">
                             {fptk.title}
                           </p>
-                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="ml-2 shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             {fptk.currentStatus || DEFAULT_CURRENT_STATUS}
                           </span>
+                          {pipeline && (
+                            <span
+                              className="ml-2 shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              style={getApplicationStatusPillClass(pipeline.status)}
+                              title="Furthest active candidate in the hiring stepper"
+                            >
+                              {pipeline.status}
+                              {pipeline.count > 1 ? ` · ${pipeline.count}` : ''}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-1 flex items-center text-sm text-gray-500">
                           <p>{fptk.department} • {fptk.position} • {fptk.location} • {(fptk as any).areaDetail || 'N/A'}</p>
@@ -1536,7 +1533,8 @@ function FPTKPageContent() {
                     </div>
                   </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </div>

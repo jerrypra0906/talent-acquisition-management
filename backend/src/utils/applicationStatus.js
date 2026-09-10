@@ -5,7 +5,8 @@ const PRISMA_APP_STATUS_STRINGS = new Set(Object.values($Enums.ApplicationStatus
 const UI_STATUS_TO_APP_STATUS_MAP = {
   applied: 'SUBMITTED',
   submitted: 'SUBMITTED',
-  'under review': 'SCREENING',
+  // Keep in sync with PIPELINE_STATUS_UI_LABELS (PSYCHOMETRIC_TEST = Under Review).
+  'under review': 'PSYCHOMETRIC_TEST',
   screening: 'SCREENING',
   shortlisted: 'SCREENING',
   'cv screening': 'SCREENING',
@@ -23,6 +24,7 @@ const UI_STATUS_TO_APP_STATUS_MAP = {
   'offer accepted': 'OFFER_ACCEPTED',
   'offer declined': 'OFFER_REJECTED',
   'offer rejected': 'OFFER_REJECTED',
+  'reject offer': 'OFFER_REJECTED',
   mcu: 'MEDICAL_CHECKUP_COMPLETED',
   'medical checkup scheduled': 'MEDICAL_CHECKUP_SCHEDULED',
   'medical checkup completed': 'MEDICAL_CHECKUP_COMPLETED',
@@ -154,12 +156,13 @@ const STATUS_TRANSITIONS = {
   Assessment: ['Document Verification', REJECTED_UI_STATUS, 'Keep In View', 'Withdrawn'],
   'Document Verification': ['Offering Creation', 'Withdrawn'],
   'Offering Creation': ['Offer Sent'],
-  'Offer Sent': ['Pending Feedback', 'Offer Accepted', 'Withdrawn'],
+  'Offer Sent': ['Pending Feedback', 'Offer Accepted', 'Offer Rejected', 'Withdrawn'],
   'Pending Feedback': ['Offer Accepted', 'Withdrawn'],
   'Offer Accepted': ['MCU', 'Withdrawn'],
   MCU: ['On Boarding', 'Withdrawn', REJECTED_UI_STATUS],
   'Keep In View': ['Offering Creation'],
-  'On Boarding': [],
+  'On Boarding': ['Withdrawn'],
+  'Offer Rejected': [],
   [REJECTED_UI_STATUS]: [],
   Withdrawn: [],
 };

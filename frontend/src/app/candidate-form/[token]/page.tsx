@@ -91,6 +91,7 @@ interface FormData {
     lastSalary: string
     resignationReason: string
     jobDescription: string
+    currentlyWorking: boolean
   }>
 
   // Other Information
@@ -117,10 +118,41 @@ interface FormData {
   travelReason: string
   currentBenefits: string
   expectedSalary: string
+  expectedBenefits: string
   availableStartDate: string
   source: string
   sourceDetail: string
   declarationAccepted: boolean
+}
+
+const EMPTY_WORK_EXPERIENCE = {
+  startMonth: '',
+  startYear: '',
+  endMonth: '',
+  endYear: '',
+  companyName: '',
+  companyAddress: '',
+  startingPosition: '',
+  lastPosition: '',
+  startingSalary: '',
+  lastSalary: '',
+  resignationReason: '',
+  jobDescription: '',
+  currentlyWorking: false,
+}
+
+const isFilledWorkExperience = (work: FormData['workExperience'][number] | null | undefined) => {
+  const hasCoreFields = Boolean(
+    String(work?.startMonth || '').trim() &&
+    String(work?.startYear || '').trim() &&
+    String(work?.companyName || '').trim() &&
+    String(work?.companyAddress || '').trim() &&
+    String(work?.startingPosition || '').trim() &&
+    String(work?.lastPosition || '').trim()
+  )
+  if (!hasCoreFields) return false
+  if (work?.currentlyWorking) return true
+  return Boolean(String(work?.endMonth || '').trim() && String(work?.endYear || '').trim())
 }
 
 const normalizeLanguages = (value: any) => {
@@ -197,7 +229,7 @@ export default function CandidateFormPage() {
     languages: [],
     socialActivities: [],
     references: [],
-    workExperience: [],
+    workExperience: [{ ...EMPTY_WORK_EXPERIENCE }],
     emergencyContactName: '',
     emergencyContactAddress: '',
     emergencyRelation: '',
@@ -221,6 +253,7 @@ export default function CandidateFormPage() {
     travelReason: '',
     currentBenefits: '',
     expectedSalary: '',
+    expectedBenefits: '',
     availableStartDate: '',
     source: '',
     sourceDetail: '',
@@ -289,20 +322,33 @@ export default function CandidateFormPage() {
               position: ref.position || '',
               relation: ref.relationship || '',
             })) || [],
-            workExperience: candidate.workExperiences?.map((exp: any) => ({
-              startMonth: exp.startDate ? (new Date(exp.startDate).getMonth() + 1).toString() : '',
-              startYear: exp.startDate ? new Date(exp.startDate).getFullYear().toString() : '',
-              endMonth: exp.endDate ? (new Date(exp.endDate).getMonth() + 1).toString() : '',
-              endYear: exp.endDate ? new Date(exp.endDate).getFullYear().toString() : '',
-              companyName: exp.companyName || '',
-              companyAddress: exp.location || '',
-              startingPosition: exp.jobTitle || '',
-              lastPosition: exp.jobTitle || '',
-              startingSalary: exp.salary?.toString() || '',
-              lastSalary: exp.salary?.toString() || '',
-              resignationReason: exp.reasonForLeaving || '',
-              jobDescription: exp.description || '',
-            })) || [],
+            workExperience: (() => {
+              const fromRelations = candidate.workExperiences?.map((exp: any) => ({
+                startMonth: exp.startDate ? (new Date(exp.startDate).getMonth() + 1).toString() : '',
+                startYear: exp.startDate ? new Date(exp.startDate).getFullYear().toString() : '',
+                endMonth: exp.endDate ? (new Date(exp.endDate).getMonth() + 1).toString() : '',
+                endYear: exp.endDate ? new Date(exp.endDate).getFullYear().toString() : '',
+                companyName: exp.companyName || '',
+                companyAddress: exp.location || '',
+                startingPosition: exp.jobTitle || '',
+                lastPosition: exp.jobTitle || '',
+                startingSalary: exp.salary?.toString() || '',
+                lastSalary: exp.salary?.toString() || '',
+                resignationReason: exp.reasonForLeaving || '',
+                jobDescription: exp.description || '',
+                currentlyWorking: !exp.endDate,
+              })) || []
+              const fromForm = Array.isArray(candidate.formDataDiri?.workExperience)
+                ? candidate.formDataDiri.workExperience.map((exp: any) => ({
+                    ...EMPTY_WORK_EXPERIENCE,
+                    ...exp,
+                    currentlyWorking: Boolean(exp?.currentlyWorking),
+                  }))
+                : []
+              if (fromRelations.length > 0) return fromRelations
+              if (fromForm.length > 0) return fromForm
+              return [{ ...EMPTY_WORK_EXPERIENCE }]
+            })(),
 
             // Other Information
             emergencyContactName: candidate.emergencyContact || '',
@@ -326,8 +372,9 @@ export default function CandidateFormPage() {
             relocationReason: '',
             willingToTravel: false,
             travelReason: '',
-            currentBenefits: '',
-            expectedSalary: candidate.expectedSalary?.toString() || '',
+            currentBenefits: candidate.formDataDiri?.currentBenefits || '',
+            expectedSalary: candidate.formDataDiri?.expectedSalary || candidate.expectedSalary?.toString() || '',
+            expectedBenefits: candidate.formDataDiri?.expectedBenefits || '',
             availableStartDate: candidate.availableFrom ? new Date(candidate.availableFrom).toISOString().split('T')[0] : '',
             source: candidate.source || candidate.applicationInfo?.source || '',
             sourceDetail: candidate.sourceDetail || '',
@@ -371,10 +418,13 @@ export default function CandidateFormPage() {
   }
 
   const removeArrayItem = (field: keyof FormData, index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: (prev[field] as any[]).filter((_, i) => i !== index)
-    }))
+    setFormData(prev => {
+      const remaining = (prev[field] as any[]).filter((_, i) => i !== index)
+      if (field === 'workExperience' && remaining.length === 0) {
+        return { ...prev, workExperience: [{ ...EMPTY_WORK_EXPERIENCE }] }
+      }
+      return { ...prev, [field]: remaining }
+    })
   }
 
   const updateArrayItem = (field: keyof FormData, index: number, updates: any) => {
@@ -386,6 +436,17 @@ export default function CandidateFormPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (formData.workExperience.filter(isFilledWorkExperience).length < 1) {
+      setSubmitError('At least one work experience is required.')
+      document.getElementById('work-experience-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+
+    if (!formData.expectedSalary.trim() || !formData.expectedBenefits.trim()) {
+      setSubmitError('Expected salary and expected benefits are required.')
+      return
+    }
 
     if (!formData.declarationAccepted) {
       setSubmitError('You must accept the declaration to submit the form.')
@@ -1328,27 +1389,14 @@ export default function CandidateFormPage() {
           </div>
 
           {/* Work Experience Section */}
-          <div className="bg-white shadow rounded-lg p-6">
+          <div id="work-experience-section" className="bg-white shadow rounded-lg p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-gray-900">
-                {translatedText('Work Experience', 'Pengalaman Kerja')}
+                {translatedText('Work Experience', 'Pengalaman Kerja')} *
               </h2>
               <button
                 type="button"
-                onClick={() => addArrayItem('workExperience', {
-                  startMonth: '',
-                  startYear: '',
-                  endMonth: '',
-                  endYear: '',
-                  companyName: '',
-                  companyAddress: '',
-                  startingPosition: '',
-                  lastPosition: '',
-                  startingSalary: '',
-                  lastSalary: '',
-                  resignationReason: '',
-                  jobDescription: ''
-                })}
+                onClick={() => addArrayItem('workExperience', { ...EMPTY_WORK_EXPERIENCE })}
                 className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
               >
                 + {translatedText('Add Work Experience', 'Tambah Pengalaman Kerja')}
@@ -1386,7 +1434,11 @@ export default function CandidateFormPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
-                      {labelText('End Period (Month-Year)', 'Periode Selesai (Bulan-Tahun)')}
+                      {labelText(
+                        'End Period (Month-Year)',
+                        'Periode Selesai (Bulan-Tahun)',
+                        !work.currentlyWorking
+                      )}
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -1394,20 +1446,43 @@ export default function CandidateFormPage() {
                         min="1"
                         max="12"
                         placeholder="Month"
-                        value={work.endMonth}
+                        required={!work.currentlyWorking}
+                        disabled={work.currentlyWorking}
+                        value={work.currentlyWorking ? '' : work.endMonth}
                         onChange={(e) => updateArrayItem('workExperience', index, { endMonth: e.target.value })}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
                       />
                       <input
                         type="number"
                         min="1900"
                         max="2100"
                         placeholder="Year"
-                        value={work.endYear}
+                        required={!work.currentlyWorking}
+                        disabled={work.currentlyWorking}
+                        value={work.currentlyWorking ? '' : work.endYear}
                         onChange={(e) => updateArrayItem('workExperience', index, { endYear: e.target.value })}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
                       />
                     </div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(work.currentlyWorking)}
+                        onChange={(e) => updateArrayItem('workExperience', index, {
+                          currentlyWorking: e.target.checked,
+                          ...(e.target.checked ? { endMonth: '', endYear: '', resignationReason: '' } : {}),
+                        })}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">
+                        {translatedText(
+                          'I still work in this position',
+                          'Saya masih bekerja di posisi ini'
+                        )}
+                      </span>
+                    </label>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
@@ -1485,9 +1560,10 @@ export default function CandidateFormPage() {
                     </label>
                     <input
                       type="text"
-                      value={work.resignationReason}
+                      disabled={work.currentlyWorking}
+                      value={work.currentlyWorking ? '' : work.resignationReason}
                       onChange={(e) => updateArrayItem('workExperience', index, { resignationReason: e.target.value })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
                     />
                   </div>
                   <div className="md:col-span-2">
@@ -1502,13 +1578,15 @@ export default function CandidateFormPage() {
                     />
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeArrayItem('workExperience', index)}
-                  className="mt-2 text-red-600 hover:text-red-900 text-sm font-medium"
-                >
-                  {translatedText('Remove', 'Hapus')}
-                </button>
+                {formData.workExperience.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeArrayItem('workExperience', index)}
+                    className="mt-2 text-red-600 hover:text-red-900 text-sm font-medium"
+                  >
+                    {translatedText('Remove', 'Hapus')}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1871,14 +1949,34 @@ export default function CandidateFormPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   {labelText(
-                    'What salary and benefits do you expect?',
-                    'Berapa gaji dan manfaat yang Anda harapkan?'
+                    'What salary do you expect?',
+                    'Berapa gaji yang Anda harapkan?',
+                    true
                   )}
                 </label>
                 <textarea
                   name="expectedSalary"
                   rows={3}
+                  required
                   value={formData.expectedSalary}
+                  onChange={handleInputChange}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  {labelText(
+                    'What benefits do you expect?',
+                    'Manfaat apa yang Anda harapkan?',
+                    true
+                  )}
+                </label>
+                <textarea
+                  name="expectedBenefits"
+                  rows={3}
+                  required
+                  value={formData.expectedBenefits}
                   onChange={handleInputChange}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />

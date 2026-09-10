@@ -14,6 +14,7 @@ const {
   assertAllowedStatusTransition,
 } = require('../utils/applicationStatus');
 const { getPositionSlaBucket } = require('../utils/positionSla');
+const { buildInterviewerLookupWhere, parseInterviewScheduledAt } = require('../utils/interviewFields');
 const { runWithAuditSuppressed } = require('../utils/auditContext');
 const auditService = require('./auditService');
 
@@ -542,6 +543,7 @@ async function syncFptkApplicationsTx(tx, fptkId, appliedCandidates, options = {
 
   const existingByCandidate = new Map(existingApplications.map((app) => [app.candidateId, app]));
   const incomingIds = new Set(normalized.map((item) => item.candidateId));
+  let leftOnboardingByWithdraw = false;
 
   const toDelete = existingApplications
     .filter((app) => !incomingIds.has(app.candidateId))
@@ -589,7 +591,7 @@ async function syncFptkApplicationsTx(tx, fptkId, appliedCandidates, options = {
     let rejectedAtValue = null;
     let withdrawnAtValue = null;
 
-    if (status === 'REJECTED') {
+    if (status === 'REJECTED' || status === 'OFFER_REJECTED') {
       rejectedAtValue = item.rejectedDate ? new Date(item.rejectedDate) : new Date();
       withdrawnAtValue = null;
     } else if (status === 'WITHDRAWN') {
@@ -607,6 +609,9 @@ async function syncFptkApplicationsTx(tx, fptkId, appliedCandidates, options = {
       const hasInterviewResult = Array.isArray(item.interviews)
         && item.interviews.some((iv) => iv && (iv.results || '').toString().trim().length > 0);
       assertAllowedStatusTransition(existing.status, status, { hasInterviewResult });
+      if (existing.status === 'ONBOARDING' && status === 'WITHDRAWN') {
+        leftOnboardingByWithdraw = true;
+      }
     }
 
     if (existing) {
@@ -714,15 +719,9 @@ async function syncFptkApplicationsTx(tx, fptkId, appliedCandidates, options = {
         }
 
         try {
-          // Parse date and time if provided
-          let scheduledAt = new Date();
-          if (interviewData.date) {
-            const dateStr = interviewData.date;
-            const timeStr = interviewData.time || '00:00';
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            scheduledAt = new Date(dateStr);
-            scheduledAt.setHours(hours || 0, minutes || 0, 0, 0);
-          }
+          // Parse date and time as UTC calendar values so they round-trip.
+          // scheduledAt is required on the model; use now only when no date was entered.
+          const scheduledAt = parseInterviewScheduledAt(interviewData.date, interviewData.time) || new Date();
 
           // Determine interview status based on data
           let interviewStatus = 'SCHEDULED';
@@ -730,22 +729,12 @@ async function syncFptkApplicationsTx(tx, fptkId, appliedCandidates, options = {
             interviewStatus = 'COMPLETED';
           }
 
-          // Try to find interviewer by name/email if interviewer field is provided
+          // Link interviewerId only on an exact email or full-name match.
           let interviewerId = null;
-          if (interviewData.interviewer && interviewData.interviewer.trim()) {
-            // Try to find user by email or name
-            const interviewerParts = interviewData.interviewer.trim().split(' ');
-            const firstName = interviewerParts[0] || '';
-            const lastName = interviewerParts.slice(1).join(' ') || '';
-            
+          const interviewerWhere = buildInterviewerLookupWhere(interviewData.interviewer);
+          if (interviewerWhere) {
             const interviewer = await tx.user.findFirst({
-              where: {
-                OR: [
-                  { email: { contains: interviewData.interviewer.trim(), mode: 'insensitive' } },
-                  ...(firstName ? [{ firstName: { contains: firstName, mode: 'insensitive' } }] : []),
-                  ...(lastName ? [{ lastName: { contains: lastName, mode: 'insensitive' } }] : []),
-                ],
-              },
+              where: interviewerWhere,
               select: { id: true },
             });
             if (interviewer) {
@@ -776,6 +765,9 @@ async function syncFptkApplicationsTx(tx, fptkId, appliedCandidates, options = {
   }
 
   await ensureFptkCloseIfAnyOnBoardingTx(tx, fptkId);
+  if (leftOnboardingByWithdraw) {
+    await ensureFptkReopenIfNoOnBoardingTx(tx, fptkId);
+  }
 }
 
 async function ensureFptkCloseIfAnyOnBoardingTx(tx, fptkId) {
@@ -795,6 +787,25 @@ async function ensureFptkCloseIfAnyOnBoardingTx(tx, fptkId) {
       },
     });
   }
+}
+
+/** Return Close → Re-Open only when no ONBOARDING applications remain. */
+async function ensureFptkReopenIfNoOnBoardingTx(tx, fptkId) {
+  const onboardingCount = await tx.application.count({
+    where: { fptkId, status: 'ONBOARDING' },
+  });
+  if (onboardingCount > 0) return;
+
+  const current = await tx.fPTK.findUnique({
+    where: { id: fptkId },
+    select: { currentStatus: true },
+  });
+  if (String(current?.currentStatus || '').trim().toLowerCase() !== 'close') return;
+
+  await tx.fPTK.update({
+    where: { id: fptkId },
+    data: { currentStatus: 'Re-Open', closedAt: null },
+  });
 }
 
 async function getFptkWithRelations(fptkId) {
@@ -1398,9 +1409,13 @@ async function getSummaryByPosition(user = null) {
   });
 
   const countsByFptkId = {};
+  const currentStatusesByFptkId = {};
   const allStatuses = new Set();
   applications.forEach((app) => {
     if (!app.fptkId) return;
+
+    if (!currentStatusesByFptkId[app.fptkId]) currentStatusesByFptkId[app.fptkId] = [];
+    currentStatusesByFptkId[app.fptkId].push(app.status);
 
     const rawStatusesReached = rawStatusesByApplicationId.get(app.id) || new Set();
     rawStatusesReached.add(app.status);
@@ -1444,6 +1459,7 @@ async function getSummaryByPosition(user = null) {
   return {
     fptks: fptksWithSla,
     applicationCounts: countsByFptkId,
+    currentStatusesByFptkId,
     totalApplicants: totalApplicantsByFptkId,
     onboardingCandidates: onboardingByFptkId,
     statuses: Array.from(allStatuses),

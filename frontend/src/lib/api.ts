@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // Dynamically determine API URL based on current hostname
 // This allows the app to work with both localhost and public IP addresses
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   // If NEXT_PUBLIC_API_URL is explicitly set, use it
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL
@@ -18,6 +18,40 @@ function getApiBaseUrl(): string {
   
   // Fallback for server-side rendering
   return 'http://localhost:4000/api'
+}
+
+/**
+ * Origin for uploaded files such as `/uploads/fptk/...` (no `/api` suffix).
+ * Production is reverse-proxied on 80/443, so a hardcoded :4000 breaks downloads.
+ */
+export function getPublicFileBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const port = window.location.port
+    if (!port || port === '80' || port === '443') {
+      return window.location.origin
+    }
+  }
+
+  const apiBase = getApiBaseUrl().replace(/\/api\/?$/i, '').replace(/\/+$/, '')
+  try {
+    const url = new URL(apiBase)
+    if (url.protocol === 'https:' && (url.port === '4000' || url.port === '443')) {
+      url.port = ''
+    }
+    if (url.protocol === 'http:' && url.port === '80') {
+      url.port = ''
+    }
+    return url.origin
+  } catch {
+    return apiBase
+  }
+}
+
+/** Full browser URL for starting DWS Hub OIDC login (not under axios base path quirks). */
+export function getOidcLoginUrl(): string {
+  const base = getApiBaseUrl().replace(/\/+$/, '')
+  // base is typically http://host:4000/api
+  return `${base}/auth/oidc/login`
 }
 
 // Create axios instance with dynamic baseURL
